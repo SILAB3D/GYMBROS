@@ -1,0 +1,80 @@
+import { PrismaClient, MuscleGroup, PointType, Rarity } from "@prisma/client";
+
+const prisma = new PrismaClient();
+
+const CATALOG: Array<[string, MuscleGroup]> = [
+  // Pecho
+  ["Press banca", "PECHO"], ["Press banca inclinado", "PECHO"], ["Press banca declinado", "PECHO"],
+  ["Press banca con mancuernas", "PECHO"], ["Aperturas con mancuernas", "PECHO"], ["Cruce de poleas", "PECHO"],
+  ["Fondos en paralelas", "PECHO"], ["Press en máquina", "PECHO"], ["Flexiones", "PECHO"],
+  // Espalda
+  ["Peso muerto", "ESPALDA"], ["Dominadas", "ESPALDA"], ["Dominadas lastradas", "ESPALDA"],
+  ["Remo con barra", "ESPALDA"], ["Remo con mancuerna", "ESPALDA"], ["Jalón al pecho", "ESPALDA"],
+  ["Remo en polea baja", "ESPALDA"], ["Pullover en polea", "ESPALDA"], ["Remo en máquina", "ESPALDA"],
+  ["Hiperextensiones", "ESPALDA"],
+  // Hombro
+  ["Press militar", "HOMBRO"], ["Press militar con mancuernas", "HOMBRO"], ["Elevaciones laterales", "HOMBRO"],
+  ["Elevaciones frontales", "HOMBRO"], ["Pájaros", "HOMBRO"], ["Face pull", "HOMBRO"],
+  ["Press Arnold", "HOMBRO"], ["Encogimientos con barra", "HOMBRO"],
+  // Bíceps
+  ["Curl con barra", "BICEPS"], ["Curl con barra Z", "BICEPS"], ["Curl con mancuernas", "BICEPS"],
+  ["Curl martillo", "BICEPS"], ["Curl en banco Scott", "BICEPS"], ["Curl en polea", "BICEPS"],
+  ["Curl concentrado", "BICEPS"],
+  // Tríceps
+  ["Press francés", "TRICEPS"], ["Extensión de tríceps en polea", "TRICEPS"], ["Extensión con cuerda", "TRICEPS"],
+  ["Press cerrado", "TRICEPS"], ["Fondos entre bancos", "TRICEPS"], ["Patada de tríceps", "TRICEPS"],
+  // Pierna
+  ["Sentadilla", "PIERNA"], ["Sentadilla frontal", "PIERNA"], ["Prensa de piernas", "PIERNA"],
+  ["Zancadas", "PIERNA"], ["Extensión de cuádriceps", "PIERNA"], ["Curl femoral", "PIERNA"],
+  ["Peso muerto rumano", "PIERNA"], ["Sentadilla búlgara", "PIERNA"], ["Elevación de gemelos", "PIERNA"],
+  ["Sentadilla hack", "PIERNA"], ["Aductores en máquina", "PIERNA"],
+  // Glúteo
+  ["Hip thrust", "GLUTEO"], ["Patada de glúteo en polea", "GLUTEO"], ["Abductores en máquina", "GLUTEO"],
+  ["Puente de glúteos", "GLUTEO"],
+  // Core
+  ["Plancha", "CORE"], ["Crunch abdominal", "CORE"], ["Elevación de piernas", "CORE"],
+  ["Rueda abdominal", "CORE"], ["Russian twist", "CORE"], ["Crunch en polea", "CORE"],
+  // Cardio
+  ["Cinta de correr", "CARDIO"], ["Bicicleta estática", "CARDIO"], ["Elíptica", "CARDIO"],
+  ["Remo (máquina)", "CARDIO"], ["Comba", "CARDIO"], ["Escaladora", "CARDIO"],
+];
+
+const POINTS: Array<[PointType, number]> = [
+  ["ATTENDANCE", 10],
+  ["WORKOUT_COMPLETED", 15],
+  ["NEW_PR", 30],
+  ["STREAK_7", 50],
+  ["ROUTINE_SHARED", 10],
+  ["GOAL_COMPLETED", 40],
+];
+
+const ACHIEVEMENTS: Array<{ code: string; name: string; description: string; icon: string; rarity: Rarity }> = [
+  { code: "FIRST_WORKOUT", name: "Primer entrenamiento", description: "Completa tu primer entrenamiento", icon: "🎯", rarity: "COMUN" },
+  { code: "WORKOUTS_10", name: "10 entrenamientos", description: "Completa 10 entrenamientos", icon: "🔟", rarity: "COMUN" },
+  { code: "WORKOUTS_100", name: "100 entrenamientos", description: "Completa 100 entrenamientos", icon: "💯", rarity: "EPICO" },
+  { code: "FIRST_PR", name: "Primer PR", description: "Registra tu primer récord personal", icon: "🏋️", rarity: "COMUN" },
+  { code: "PR_10", name: "10 PRs", description: "Consigue 10 récords personales", icon: "📈", rarity: "RARO" },
+  { code: "STREAK_7", name: "Racha de 7 días", description: "Entrena 7 días seguidos", icon: "🔥", rarity: "RARO" },
+  { code: "STREAK_30", name: "Racha de 30 días", description: "Entrena 30 días seguidos", icon: "🌋", rarity: "LEGENDARIO" },
+  { code: "VOLUME_1000", name: "1.000 kg levantados", description: "Acumula 1.000 kg de volumen total", icon: "🏗️", rarity: "COMUN" },
+  { code: "VOLUME_10000", name: "10.000 kg levantados", description: "Acumula 10.000 kg de volumen total", icon: "🚛", rarity: "EPICO" },
+  { code: "ATTENDANCE_100", name: "100 asistencias", description: "Ve al gimnasio 100 veces", icon: "🏛️", rarity: "EPICO" },
+];
+
+async function main() {
+  for (const [name, muscleGroup] of CATALOG) {
+    const existing = await prisma.exercise.findFirst({ where: { name, createdById: null } });
+    if (!existing) await prisma.exercise.create({ data: { name, muscleGroup } });
+  }
+  for (const [type, points] of POINTS) {
+    await prisma.pointsConfig.upsert({ where: { type }, update: {}, create: { type, points } });
+  }
+  for (const a of ACHIEVEMENTS) {
+    await prisma.achievement.upsert({ where: { code: a.code }, update: {}, create: a });
+  }
+  console.log("Seed completado ✅");
+}
+
+main()
+  .catch((e) => { console.error(e); process.exit(1); })
+  .finally(() => prisma.$disconnect());

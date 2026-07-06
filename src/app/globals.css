@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 240 6% 4%;
+  --surface: 240 5% 8%;
+  --surface-2: 240 5% 12%;
+  --border: 240 5% 16%;
+  --fg: 0 0% 96%;
+  --muted: 240 4% 60%;
+  --accent: 152 76% 47%;
+  --accent-fg: 240 6% 4%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background-color: hsl(var(--bg));
+  color: hsl(var(--fg));
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: hsl(var(--accent) / 0.3);
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  scrollbar-width: none;
+}
