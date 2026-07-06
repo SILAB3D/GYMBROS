@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, GripVertical } from "lucide-react";
+import { Plus, Trash2, GripVertical, Search, Globe, Lock } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Input, Label, Modal } from "@/components/ui";
 import { MUSCLE_LABELS, DAY_LABELS, cn } from "@/lib/utils";
+import { matchesExercise } from "@/lib/exercise-search";
 import type { MuscleGroup } from "@prisma/client";
 
 const COLORS = ["#22c55e", "#3b82f6", "#a855f7", "#ef4444", "#f59e0b", "#ec4899", "#14b8a6"];
@@ -48,6 +49,7 @@ export function RoutineForm({
     },
   );
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const [newExercise, setNewExercise] = useState({ name: "", muscleGroup: "PECHO" as MuscleGroup });
 
   const onSuccess = async () => {
@@ -99,13 +101,38 @@ export function RoutineForm({
     else create.mutate(payload);
   }
 
-  const grouped = (catalog ?? []).reduce<Record<string, typeof catalog>>((acc, e) => {
+  const filteredCatalog = (catalog ?? []).filter((e) => matchesExercise(e.name, search));
+  const grouped = filteredCatalog.reduce<Record<string, typeof catalog>>((acc, e) => {
     (acc[e.muscleGroup] ??= [] as NonNullable<typeof catalog>).push(e);
     return acc;
   }, {});
 
+  // Qué falta para poder guardar la rutina
+  const missing: string[] = [];
+  if (form.name.trim().length < 2) missing.push("el nombre de la rutina (mínimo 2 caracteres)");
+  if (form.exercises.length === 0) missing.push("añadir al menos un ejercicio");
+  const mutationError = create.error ?? update.error;
+
   return (
     <div className="space-y-5">
+      {/* Transparencia: qué ve el grupo y qué no */}
+      <Card className="flex flex-col gap-1.5 border-accent/20 bg-accent/5 py-3 text-xs">
+        <p className="flex items-center gap-1.5">
+          <Globe className="h-3.5 w-3.5 shrink-0 text-accent" />
+          <span>
+            <strong>Público para el grupo:</strong> nombre de la rutina, ejercicios, series y repeticiones
+            (visibles en tu perfil de Comunidad).
+          </span>
+        </p>
+        <p className="flex items-center gap-1.5">
+          <Lock className="h-3.5 w-3.5 shrink-0 text-muted" />
+          <span>
+            <strong>Privado, solo tú lo ves:</strong> los pesos que configures aquí, los que registres al
+            entrenar, tus notas y el volumen levantado.
+          </span>
+        </p>
+      </Card>
+
       <Card className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
@@ -199,7 +226,7 @@ export function RoutineForm({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">Ejercicios ({form.exercises.length})</h2>
-          <Button variant="secondary" size="sm" onClick={() => setPickerOpen(true)}>
+          <Button variant="secondary" size="sm" onClick={() => { setSearch(""); setPickerOpen(true); }}>
             <Plus className="h-4 w-4" /> Añadir ejercicio
           </Button>
         </div>
@@ -233,13 +260,13 @@ export function RoutineForm({
                   onChange={(ev) => updateExercise(i, { reps: +ev.target.value || 1 })} />
               </div>
               <div>
-                <Label>Peso (kg)</Label>
+                <Label>Peso (kg) — opcional</Label>
                 <Input type="number" min={0} step="0.5" value={e.targetWeight ?? ""}
                   placeholder="—"
                   onChange={(ev) => updateExercise(i, { targetWeight: ev.target.value ? +ev.target.value : null })} />
               </div>
               <div>
-                <Label>Descanso (s)</Label>
+                <Label>Descanso (s) — opcional</Label>
                 <Input type="number" min={0} step={15} value={e.restSeconds ?? ""}
                   placeholder="—"
                   onChange={(ev) => updateExercise(i, { restSeconds: ev.target.value ? +ev.target.value : null })} />
@@ -254,19 +281,44 @@ export function RoutineForm({
         ))}
       </div>
 
-      <Button
-        size="lg"
-        className="w-full sm:w-auto"
-        disabled={form.name.length < 2 || form.exercises.length === 0}
-        loading={create.isLoading || update.isLoading}
-        onClick={submit}
-      >
-        {routineId ? "Guardar cambios" : "Crear rutina"}
-      </Button>
+      <div className="space-y-2">
+        {missing.length > 0 && (
+          <p className="text-sm text-amber-400">
+            Para {routineId ? "guardar" : "crear"} la rutina falta: {missing.join(" y ")}.
+          </p>
+        )}
+        {mutationError && (
+          <p className="text-sm text-red-400">Error al guardar: {mutationError.message}</p>
+        )}
+        <Button
+          size="lg"
+          className="w-full sm:w-auto"
+          disabled={missing.length > 0}
+          loading={create.isLoading || update.isLoading}
+          onClick={submit}
+        >
+          {routineId ? "Guardar cambios" : "Crear rutina"}
+        </Button>
+      </div>
 
       <Modal open={pickerOpen} onClose={() => setPickerOpen(false)} title="Añadir ejercicio">
         <div className="space-y-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+            <Input
+              autoFocus
+              value={search}
+              placeholder="Buscar en español o inglés: banca, squat, curl…"
+              className="pl-9"
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
           <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+            {filteredCatalog.length === 0 && (
+              <p className="py-6 text-center text-sm text-muted">
+                Sin resultados para «{search}». Puedes crearlo abajo. 👇
+              </p>
+            )}
             {Object.entries(grouped).map(([group, exercises]) => (
               <div key={group}>
                 <p className="mb-1 text-xs font-semibold uppercase text-muted">

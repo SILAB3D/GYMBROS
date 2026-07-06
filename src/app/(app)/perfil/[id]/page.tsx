@@ -1,15 +1,24 @@
 "use client";
 
+import { useState } from "react";
 import { useParams } from "next/navigation";
-import { format, formatDistanceToNowStrict } from "date-fns";
+import { format, formatDistanceToNowStrict, addMonths, subMonths } from "date-fns";
 import { es } from "date-fns/locale";
-import { Flame, Trophy } from "lucide-react";
+import { Flame, Trophy, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import { api } from "@/trpc/react";
-import { Card, Spinner, Avatar, Stat, Badge, ProgressBar } from "@/components/ui";
+import { Card, Spinner, Avatar, Stat, Badge, Button } from "@/components/ui";
+import { MonthCalendar } from "@/components/month-calendar";
+import { DAY_LABELS } from "@/lib/utils";
 
 export default function PublicProfilePage() {
   const params = useParams<{ id: string }>();
+  const [cursor, setCursor] = useState(new Date());
   const { data, isLoading } = api.user.publicProfile.useQuery({ userId: params.id });
+  const { data: calendarDates } = api.user.memberCalendar.useQuery({
+    userId: params.id,
+    year: cursor.getFullYear(),
+    month: cursor.getMonth(),
+  });
 
   if (isLoading || !data) return <Spinner />;
 
@@ -29,13 +38,13 @@ export default function PublicProfilePage() {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat
-          label="Racha"
+          label="Racha semanal"
           value={
             <span className="flex items-center gap-1">
               {data.user.currentStreak} <Flame className="h-5 w-5 text-orange-400" />
             </span>
           }
-          sub={`Mejor: ${data.user.bestStreak}`}
+          sub={`Mejor: ${data.user.bestStreak} semanas`}
         />
         <Stat label="Asistencias" value={data.attendances} />
         <Stat label="Entrenamientos" value={data.workouts} />
@@ -43,6 +52,30 @@ export default function PublicProfilePage() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
+        {/* Calendario de entrenos del miembro */}
+        <Card>
+          <div className="mb-3 flex items-center justify-between">
+            <Button variant="ghost" size="sm" onClick={() => setCursor((c) => subMonths(c, 1))}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <h2 className="font-semibold capitalize">
+              {format(cursor, "MMMM yyyy", { locale: es })}
+            </h2>
+            <Button variant="ghost" size="sm" onClick={() => setCursor((c) => addMonths(c, 1))}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+          <MonthCalendar
+            year={cursor.getFullYear()}
+            month={cursor.getMonth()}
+            trainedDates={calendarDates ?? []}
+          />
+          <p className="mt-3 text-center text-sm text-muted">
+            {calendarDates?.length ?? 0} días entrenados este mes
+          </p>
+        </Card>
+
+        {/* PRs recientes */}
         <Card>
           <h2 className="mb-3 flex items-center gap-2 font-semibold">
             <Trophy className="h-4 w-4 text-gold" /> PRs recientes
@@ -54,62 +87,66 @@ export default function PublicProfilePage() {
               {data.recentPRs.map((pr) => (
                 <div key={pr.id} className="flex justify-between rounded-xl bg-surface-2 p-3 text-sm">
                   <span>{pr.exercise.name}</span>
-                  <span className="font-bold text-accent">{pr.weight} kg × {pr.reps}</span>
+                  <span className="text-muted">{format(pr.date, "d MMM yyyy", { locale: es })}</span>
                 </div>
               ))}
             </div>
           )}
         </Card>
-
-        <Card>
-          <h2 className="mb-3 font-semibold">Objetivos públicos</h2>
-          {data.publicGoals.length === 0 ? (
-            <p className="text-sm text-muted">Sin objetivos públicos</p>
-          ) : (
-            <div className="space-y-3">
-              {data.publicGoals.map((g) => {
-                const pct = Math.min(100, Math.round((g.currentValue / g.targetValue) * 100));
-                return (
-                  <div key={g.id}>
-                    <div className="mb-1 flex justify-between text-sm">
-                      <span>{g.title}</span>
-                      <span className="text-muted">{pct}%</span>
-                    </div>
-                    <ProgressBar value={pct} />
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Card>
-
-        {data.sharedRoutines.length > 0 && (
-          <Card>
-            <h2 className="mb-3 font-semibold">Rutinas compartidas</h2>
-            <div className="space-y-2">
-              {data.sharedRoutines.map((r) => (
-                <div key={r.id} className="flex justify-between rounded-xl bg-surface-2 p-3 text-sm">
-                  <span>{r.emoji} {r.name}</span>
-                  <span className="text-muted">{r._count.exercises} ejercicios</span>
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
-
-        {data.achievements.length > 0 && (
-          <Card>
-            <h2 className="mb-3 font-semibold">Logros</h2>
-            <div className="flex flex-wrap gap-2">
-              {data.achievements.map((ua) => (
-                <Badge key={ua.achievementId} title={ua.achievement.description}>
-                  {ua.achievement.icon} {ua.achievement.name}
-                </Badge>
-              ))}
-            </div>
-          </Card>
-        )}
       </div>
+
+      {/* Rutinas del miembro */}
+      <section>
+        <h2 className="mb-3 font-semibold">Sus rutinas ({data.routines.length})</h2>
+        {data.routines.length === 0 ? (
+          <p className="text-sm text-muted">Todavía no ha creado ninguna rutina.</p>
+        ) : (
+          <div className="space-y-3">
+            {data.routines.map((r) => (
+              <details key={r.id} className="group rounded-2xl border border-border bg-surface">
+                <summary className="flex cursor-pointer list-none items-center justify-between p-4 [&::-webkit-details-marker]:hidden">
+                  <div>
+                    <p className="font-medium">
+                      {r.emoji} {r.name}
+                      {r.isShared && <Badge className="ml-2 bg-accent/15 text-accent">compartida</Badge>}
+                    </p>
+                    <p className="text-xs text-muted">
+                      {r.exercises.length} ejercicios
+                      {r.estimatedMinutes ? ` · ~${r.estimatedMinutes} min` : ""}
+                      {r.recommendedDays.length > 0
+                        ? ` · ${r.recommendedDays.map((d) => DAY_LABELS[d]).join(" · ")}`
+                        : ""}
+                    </p>
+                  </div>
+                  <ChevronDown className="h-4 w-4 text-muted transition-transform group-open:rotate-180" />
+                </summary>
+                <div className="space-y-1.5 border-t border-border p-4 pt-3">
+                  {r.exercises.map((e) => (
+                    <div key={e.id} className="flex justify-between text-sm">
+                      <span>{e.exercise.name}</span>
+                      <span className="text-muted">{e.sets}×{e.reps}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Logros */}
+      {data.achievements.length > 0 && (
+        <Card>
+          <h2 className="mb-3 font-semibold">Logros</h2>
+          <div className="flex flex-wrap gap-2">
+            {data.achievements.map((ua) => (
+              <Badge key={ua.achievementId} title={ua.achievement.description}>
+                {ua.achievement.icon} {ua.achievement.name}
+              </Badge>
+            ))}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

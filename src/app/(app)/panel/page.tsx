@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { Flame, Trophy, Dumbbell, CalendarCheck, ChevronRight, Play } from "lucide-react";
+import { Flame, Trophy, CalendarCheck, ChevronRight, SkipForward } from "lucide-react";
 import { api } from "@/trpc/react";
-import { Button, Card, Spinner, Stat, ProgressBar, Badge } from "@/components/ui";
+import { Button, Card, Spinner, Stat } from "@/components/ui";
 import { MonthCalendar } from "@/components/month-calendar";
+import { WorkoutLauncher } from "@/components/workout-launcher";
 import { formatKg } from "@/lib/utils";
 
 export default function DashboardPage() {
@@ -14,6 +15,12 @@ export default function DashboardPage() {
   const { data, isLoading } = api.dashboard.summary.useQuery();
   const checkIn = api.attendance.checkIn.useMutation({
     onSuccess: () => utils.dashboard.summary.invalidate(),
+  });
+  const advancePlan = api.plan.advance.useMutation({
+    onSuccess: () => {
+      utils.dashboard.summary.invalidate();
+      utils.plan.get.invalidate();
+    },
   });
 
   if (isLoading || !data) return <Spinner />;
@@ -29,69 +36,102 @@ export default function DashboardPage() {
             {format(now, "EEEE, d 'de' MMMM", { locale: es })}
           </p>
         </div>
-        {!data.todayAttendance ? (
+        {!data.todayAttendance && (
           <Button onClick={() => checkIn.mutate({})} loading={checkIn.isLoading}>
             <CalendarCheck className="h-4 w-4" /> Hoy fui al gym
           </Button>
-        ) : (
-          <Badge className="bg-accent/15 text-accent">✅ Asistencia registrada</Badge>
         )}
       </div>
 
-      {/* Entrenamiento activo */}
-      {data.activeWorkout && (
-        <Link href="/entrenar">
-          <Card className="flex items-center justify-between border-accent/40 bg-accent/5 transition hover:bg-accent/10 animate-pulse-glow">
-            <div>
-              <p className="text-sm text-muted">Entrenamiento en curso</p>
-              <p className="font-semibold">
-                {data.activeWorkout.routine
-                  ? `${data.activeWorkout.routine.emoji} ${data.activeWorkout.routine.name}`
-                  : "Entrenamiento libre"}
-              </p>
-            </div>
-            <Play className="h-6 w-6 text-accent" />
-          </Card>
-        </Link>
-      )}
+      {/* Botón central: registrar / actualizar entrenamiento */}
+      <WorkoutLauncher />
 
       {/* Stats rápidas */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat
-          label="Racha"
+          label="Racha semanal"
           value={
             <span className="flex items-center gap-1">
               {data.user.currentStreak} <Flame className="h-5 w-5 text-orange-400" />
             </span>
           }
-          sub={`Mejor: ${data.user.bestStreak} días`}
+          sub={`Mejor: ${data.user.bestStreak} semanas`}
         />
         <Stat
           label="Ranking semanal"
           value={data.rankingPosition ? `#${data.rankingPosition}` : "—"}
           sub={`${data.myWeekPoints} puntos`}
         />
-        <Stat label="Esta semana" value={data.weekAttendances} sub="asistencias" />
+        <Stat
+          label="Esta semana"
+          value={
+            data.user.weeklyTargetDays > 0
+              ? `${data.weekAttendances}/${data.user.weeklyTargetDays}`
+              : data.weekAttendances
+          }
+          sub={data.user.weeklyTargetDays > 0 ? "días planificados" : "asistencias"}
+        />
         <Stat label="Volumen total" value={formatKg(data.totalVolume)} sub={`${data.totalWorkouts} entrenos`} />
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
-        {/* Rutinas de hoy */}
+        {/* Entrenamiento de hoy, según el plan */}
         <Card>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-semibold">Entrenamiento de hoy</h2>
-            <Link href="/rutinas" className="text-xs text-accent hover:underline">
-              Ver rutinas
+            <Link href="/entrenamiento?tab=plan" className="text-xs text-accent hover:underline">
+              Configurar plan
             </Link>
           </div>
-          {data.todayRoutines.length === 0 ? (
-            <p className="text-sm text-muted">
-              No tienes rutinas asignadas para hoy.{" "}
-              <Link href="/rutinas" className="text-accent hover:underline">
-                Elige una para entrenar
-              </Link>
-            </p>
-          ) : (
+          {data.plan ? (
+            data.plan.next?.routine ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between rounded-xl bg-surface-2 p-3">
+                  <span className="flex items-center gap-2.5">
+                    <span className="text-2xl">{data.plan.next.routine.emoji}</span>
+                    <span>
+                      <span className="block font-medium">{data.plan.next.routine.name}</span>
+                      <span className="text-xs text-muted">
+                        {data.plan.next.routine._count.exercises} ejercicios · te toca hoy
+                      </span>
+                    </span>
+                  </span>
+                  <Button
+                    size="sm" variant="ghost" title="Saltar al siguiente"
+                    loading={advancePlan.isLoading}
+                    onClick={() => advancePlan.mutate()}
+                  >
+                    <SkipForward className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                {data.plan.following && (
+                  <p className="text-xs text-muted">
+                    Después:{" "}
+                    {data.plan.following.routine
+                      ? `${data.plan.following.routine.emoji} ${data.plan.following.routine.name}`
+                      : "😴 descanso"}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center justify-between rounded-xl bg-surface-2 p-3">
+                <span className="flex items-center gap-2.5">
+                  <span className="text-2xl">😴</span>
+                  <span>
+                    <span className="block font-medium">Día de descanso</span>
+                    <span className="text-xs text-muted">recuperar también es entrenar</span>
+                  </span>
+                </span>
+                <Button
+                  size="sm" variant="secondary"
+                  loading={advancePlan.isLoading}
+                  onClick={() => advancePlan.mutate()}
+                >
+                  Cumplido ✓
+                </Button>
+              </div>
+            )
+          ) : data.todayRoutines.length > 0 ? (
             <div className="space-y-2">
               {data.todayRoutines.map((r) => (
                 <Link
@@ -110,6 +150,14 @@ export default function DashboardPage() {
                 </Link>
               ))}
             </div>
+          ) : (
+            <p className="text-sm text-muted">
+              Define el orden de tus rutinas y descansos en{" "}
+              <Link href="/entrenamiento?tab=plan" className="text-accent hover:underline">
+                Entrenamiento → Plan
+              </Link>{" "}
+              y aquí verás siempre lo que te toca.
+            </p>
           )}
         </Card>
 
@@ -119,7 +167,7 @@ export default function DashboardPage() {
             <h2 className="font-semibold capitalize">
               {format(now, "MMMM yyyy", { locale: es })}
             </h2>
-            <Link href="/asistencia" className="text-xs text-accent hover:underline">
+            <Link href="/entrenamiento?tab=asistencia" className="text-xs text-accent hover:underline">
               Ver todo
             </Link>
           </div>
@@ -136,7 +184,7 @@ export default function DashboardPage() {
             <h2 className="flex items-center gap-2 font-semibold">
               <Trophy className="h-4 w-4 text-gold" /> Últimos PRs
             </h2>
-            <Link href="/prs" className="text-xs text-accent hover:underline">
+            <Link href="/entrenamiento?tab=prs" className="text-xs text-accent hover:underline">
               Ver todos
             </Link>
           </div>
@@ -156,38 +204,6 @@ export default function DashboardPage() {
           )}
         </Card>
 
-        {/* Objetivos activos */}
-        <Card>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold">Objetivos</h2>
-            <Link href="/objetivos" className="text-xs text-accent hover:underline">
-              Gestionar
-            </Link>
-          </div>
-          {data.activeGoals.length === 0 ? (
-            <p className="text-sm text-muted">
-              Sin objetivos activos.{" "}
-              <Link href="/objetivos" className="text-accent hover:underline">
-                Crea el primero
-              </Link>
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {data.activeGoals.map((g) => {
-                const pct = Math.round((g.currentValue / g.targetValue) * 100);
-                return (
-                  <div key={g.id}>
-                    <div className="mb-1 flex justify-between text-sm">
-                      <span>{g.title}</span>
-                      <span className="text-muted">{pct}%</span>
-                    </div>
-                    <ProgressBar value={pct} />
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Card>
       </div>
 
       {/* Notificaciones recientes */}
@@ -210,14 +226,6 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      {/* CTA registrar entreno */}
-      {!data.activeWorkout && (
-        <Link href="/rutinas">
-          <Button size="lg" className="w-full md:w-auto">
-            <Dumbbell className="h-5 w-5" /> Registrar entrenamiento
-          </Button>
-        </Link>
-      )}
     </div>
   );
 }

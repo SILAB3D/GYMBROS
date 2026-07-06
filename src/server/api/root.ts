@@ -6,13 +6,15 @@ import { workoutRouter } from "@/server/api/routers/workout";
 import { attendanceRouter } from "@/server/api/routers/attendance";
 import { prRouter } from "@/server/api/routers/pr";
 import { metricsRouter } from "@/server/api/routers/metrics";
-import { goalRouter } from "@/server/api/routers/goal";
 import { rankingRouter } from "@/server/api/routers/ranking";
 import { notificationRouter } from "@/server/api/routers/notification";
 import { dashboardRouter } from "@/server/api/routers/dashboard";
 import { feedRouter } from "@/server/api/routers/feed";
 import { statsRouter } from "@/server/api/routers/stats";
 import { adminRouter } from "@/server/api/routers/admin";
+import { feedbackRouter } from "@/server/api/routers/feedback";
+import { planRouter } from "@/server/api/routers/plan";
+import { chatRouter } from "@/server/api/routers/chat";
 
 export const appRouter = createTRPCRouter({
   user: userRouter,
@@ -22,13 +24,15 @@ export const appRouter = createTRPCRouter({
   attendance: attendanceRouter,
   pr: prRouter,
   metrics: metricsRouter,
-  goal: goalRouter,
   ranking: rankingRouter,
   notification: notificationRouter,
   dashboard: dashboardRouter,
   feed: feedRouter,
   stats: statsRouter,
   admin: adminRouter,
+  feedback: feedbackRouter,
+  plan: planRouter,
+  chat: chatRouter,
 });
 
 export type AppRouter = typeof appRouter;

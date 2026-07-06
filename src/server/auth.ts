@@ -4,7 +4,8 @@ import { compare } from "bcryptjs";
 import { db } from "@/lib/db";
 
 export const authOptions: NextAuthOptions = {
-  session: { strategy: "jwt" },
+  // La sesión dura 1 año: solo se cierra si el usuario pulsa "Cerrar sesión" en Ajustes
+  session: { strategy: "jwt", maxAge: 60 * 60 * 24 * 365 },
   pages: { signIn: "/login" },
   providers: [
     CredentialsProvider({

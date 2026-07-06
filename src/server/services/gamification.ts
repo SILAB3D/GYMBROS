@@ -12,11 +12,12 @@ export async function awardPoints(
   type: PointType,
   meta?: Record<string, unknown>,
 ) {
-  const config = await db.pointsConfig.findUnique({ where: { type } });
-  const points = config?.points ?? 0;
-  if (points <= 0) return 0;
-  await db.pointEvent.create({ data: { userId, type, points, meta: meta as object | undefined } });
-  return points;
+  const rule = await db.pointRule.findUnique({ where: { type } });
+  if (!rule || !rule.enabled || rule.points <= 0) return 0;
+  await db.pointEvent.create({
+    data: { userId, type, points: rule.points, meta: meta as object | undefined },
+  });
+  return rule.points;
 }
 
 export async function notify(
@@ -86,8 +87,8 @@ export async function checkAchievements(db: PrismaClient, userId: string) {
   if (workouts >= 100) await grant(db, userId, "WORKOUTS_100");
   if (prs >= 1) await grant(db, userId, "FIRST_PR");
   if (prs >= 10) await grant(db, userId, "PR_10");
-  if ((user?.bestStreak ?? 0) >= 7) await grant(db, userId, "STREAK_7");
-  if ((user?.bestStreak ?? 0) >= 30) await grant(db, userId, "STREAK_30");
+  if ((user?.bestStreak ?? 0) >= 4) await grant(db, userId, "STREAK_7"); // 1 mes (4 semanas)
+  if ((user?.bestStreak ?? 0) >= 26) await grant(db, userId, "STREAK_30"); // 6 meses (26 semanas)
   if (totalVolume >= 1000) await grant(db, userId, "VOLUME_1000");
   if (totalVolume >= 10000) await grant(db, userId, "VOLUME_10000");
   if (attendances >= 100) await grant(db, userId, "ATTENDANCE_100");

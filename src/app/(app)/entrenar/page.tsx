@@ -8,6 +8,7 @@ import { formatDistanceToNowStrict } from "date-fns";
 import { es } from "date-fns/locale";
 import { api } from "@/trpc/react";
 import { Button, Card, Input, Modal, Spinner, EmptyState } from "@/components/ui";
+import { WorkoutLauncher } from "@/components/workout-launcher";
 import { cn, MUSCLE_LABELS } from "@/lib/utils";
 
 export default function ActiveWorkoutPage() {
@@ -69,19 +70,14 @@ export default function ActiveWorkoutPage() {
 
   if (!workout) {
     return (
-      <EmptyState
-        icon="🏋️"
-        title="No hay ningún entrenamiento en curso"
-        subtitle="Empieza desde una de tus rutinas o entrena libre"
-        action={
-          <div className="flex gap-2">
-            <Link href="/rutinas">
-              <Button>Elegir rutina</Button>
-            </Link>
-            <StartFreeButton />
-          </div>
-        }
-      />
+      <div className="mx-auto max-w-md space-y-6 py-8">
+        <EmptyState
+          icon="🏋️"
+          title="No hay ningún entrenamiento en curso"
+          subtitle="Registra tu entrenamiento eligiendo una de tus rutinas"
+        />
+        <WorkoutLauncher />
+      </div>
     );
   }
 
@@ -207,18 +203,3 @@ export default function ActiveWorkoutPage() {
   );
 }
 
-function StartFreeButton() {
-  const router = useRouter();
-  const utils = api.useUtils();
-  const start = api.workout.start.useMutation({
-    onSuccess: () => {
-      utils.workout.active.invalidate();
-      router.refresh();
-    },
-  });
-  return (
-    <Button variant="secondary" onClick={() => start.mutate({})} loading={start.isLoading}>
-      Entrenar libre
-    </Button>
-  );
-}

@@ -1,13 +1,14 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
-import { awardPoints, addFeed, notifyOthers, checkAchievements } from "@/server/services/gamification";
+import { finishWorkout, autoCloseStaleWorkouts } from "@/server/services/workout-service";
 
 export const workoutRouter = createTRPCRouter({
   // Iniciar sesión de entrenamiento (opcionalmente desde una rutina)
   start: protectedProcedure
     .input(z.object({ routineId: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
+      await autoCloseStaleWorkouts(ctx.db, ctx.session.user.id);
       const active = await ctx.db.workout.findFirst({
         where: { userId: ctx.session.user.id, endedAt: null },
       });
@@ -49,8 +50,10 @@ export const workoutRouter = createTRPCRouter({
       });
     }),
 
-  active: protectedProcedure.query(({ ctx }) =>
-    ctx.db.workout.findFirst({
+  active: protectedProcedure.query(async ({ ctx }) => {
+    // Autocierre: si hay una sesión con más de 3 horas, se finaliza sola
+    await autoCloseStaleWorkouts(ctx.db, ctx.session.user.id);
+    return ctx.db.workout.findFirst({
       where: { userId: ctx.session.user.id, endedAt: null },
       include: {
         routine: true,
@@ -59,8 +62,8 @@ export const workoutRouter = createTRPCRouter({
           include: { exercise: true, sets: { orderBy: { setNumber: "asc" } } },
         },
       },
-    }),
-  ),
+    });
+  }),
 
   updateSet: protectedProcedure
     .input(
@@ -128,70 +131,13 @@ export const workoutRouter = createTRPCRouter({
     return { ok: true };
   }),
 
-  // Finalizar: calcula totales, detecta PRs automáticamente y otorga puntos
+  // Finalizar: calcula totales, detecta PRs y otorga puntos (ver workout-service)
   finish: protectedProcedure
     .input(z.object({ workoutId: z.string(), notes: z.string().max(500).optional() }))
     .mutation(async ({ ctx, input }) => {
-      const workout = await ctx.db.workout.findUnique({
-        where: { id: input.workoutId },
-        include: {
-          routine: true,
-          exercises: { include: { exercise: true, sets: true } },
-        },
-      });
+      const workout = await ctx.db.workout.findUnique({ where: { id: input.workoutId } });
       if (!workout || workout.userId !== ctx.session.user.id) throw new TRPCError({ code: "FORBIDDEN" });
-      if (workout.endedAt) return { workoutId: workout.id, newPRs: [] as string[] };
-
-      let totalVolume = 0;
-      let totalSets = 0;
-      let totalReps = 0;
-      for (const we of workout.exercises) {
-        for (const s of we.sets) {
-          if (!s.completed) continue;
-          totalVolume += s.weight * s.reps;
-          totalSets += 1;
-          totalReps += s.reps;
-        }
-      }
-
-      await ctx.db.workout.update({
-        where: { id: workout.id },
-        data: { endedAt: new Date(), totalVolume, totalSets, totalReps, notes: input.notes },
-      });
-
-      const userId = ctx.session.user.id;
-      const user = await ctx.db.user.findUniqueOrThrow({ where: { id: userId }, select: { name: true } });
-
-      // --- Detección automática de PRs (mejor peso por ejercicio) ---
-      const newPRs: string[] = [];
-      for (const we of workout.exercises) {
-        const best = we.sets
-          .filter((s) => s.completed && s.weight > 0)
-          .sort((a, b) => b.weight - a.weight)[0];
-        if (!best) continue;
-        const currentPR = await ctx.db.personalRecord.findFirst({
-          where: { userId, exerciseId: we.exerciseId },
-          orderBy: { weight: "desc" },
-        });
-        if (!currentPR || best.weight > currentPR.weight) {
-          await ctx.db.personalRecord.create({
-            data: {
-              userId, exerciseId: we.exerciseId, weight: best.weight, reps: best.reps,
-              isAuto: true, notes: "Detectado automáticamente al finalizar el entrenamiento",
-            },
-          });
-          await awardPoints(ctx.db, userId, "NEW_PR", { exerciseId: we.exerciseId, weight: best.weight });
-          newPRs.push(`${we.exercise.name}: ${best.weight} kg`);
-          await addFeed(ctx.db, userId, "PR", `${user.name} consiguió un nuevo PR en ${we.exercise.name}: ${best.weight} kg 🎉`);
-          await notifyOthers(ctx.db, userId, "FRIEND_PR", `${user.name} hizo un nuevo PR`, `${we.exercise.name}: ${best.weight} kg × ${best.reps}`);
-        }
-      }
-
-      await awardPoints(ctx.db, userId, "WORKOUT_COMPLETED", { workoutId: workout.id });
-      await addFeed(ctx.db, userId, "WORKOUT", `${user.name} completó ${workout.routine ? `la rutina ${workout.routine.emoji} ${workout.routine.name}` : "un entrenamiento"} (${Math.round(totalVolume)} kg de volumen)`);
-      await checkAchievements(ctx.db, userId);
-
-      return { workoutId: workout.id, newPRs };
+      return finishWorkout(ctx.db, input.workoutId, { notes: input.notes });
     }),
 
   history: protectedProcedure

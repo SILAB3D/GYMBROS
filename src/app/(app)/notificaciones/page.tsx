@@ -13,7 +13,6 @@ const FILTERS: Array<{ key: NotificationType | "ALL"; label: string }> = [
   { key: "ALL", label: "Todas" },
   { key: "FRIEND_PR", label: "PRs del grupo" },
   { key: "STREAK", label: "Rachas" },
-  { key: "GOAL", label: "Objetivos" },
   { key: "SYSTEM", label: "Sistema" },
 ];
 

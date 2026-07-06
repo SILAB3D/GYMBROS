@@ -31,8 +31,9 @@ export const prRouter = createTRPCRouter({
       if (isNewBest) {
         await awardPoints(ctx.db, userId, "NEW_PR", { exerciseId: input.exerciseId, weight: input.weight });
         const user = await ctx.db.user.findUniqueOrThrow({ where: { id: userId }, select: { name: true } });
-        await addFeed(ctx.db, userId, "PR", `${user.name} consiguió un nuevo PR en ${exercise.name}: ${input.weight} kg 🎉`);
-        await notifyOthers(ctx.db, userId, "FRIEND_PR", `${user.name} hizo un nuevo PR`, `${exercise.name}: ${input.weight} kg × ${input.reps}`);
+        // Público: el evento del PR. Privado: el peso alcanzado.
+        await addFeed(ctx.db, userId, "PR", `${user.name} consiguió un nuevo PR en ${exercise.name} 🎉`);
+        await notifyOthers(ctx.db, userId, "FRIEND_PR", `${user.name} hizo un nuevo PR`, exercise.name);
         await checkAchievements(ctx.db, userId);
       }
       return { pr, isNewBest };

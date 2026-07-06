@@ -1,9 +1,12 @@
 import { startOfDay, startOfISOWeek, endOfISOWeek, startOfMonth, endOfMonth } from "date-fns";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
+import { autoCloseStaleWorkouts } from "@/server/services/workout-service";
+import { effectiveWeekStreak } from "@/server/services/streak";
 
 export const dashboardRouter = createTRPCRouter({
   summary: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
+    await autoCloseStaleWorkouts(ctx.db, userId);
     const now = new Date();
     const today = startOfDay(now);
     const weekday = now.getDay();
@@ -14,18 +17,21 @@ export const dashboardRouter = createTRPCRouter({
       lastAttendance,
       activeWorkout,
       todayRoutines,
+      planSlots,
       weekAttendances,
       monthAttendances,
       recentPRs,
       weekPoints,
       unreadNotifications,
-      activeGoals,
       totalWorkouts,
       totalVolume,
     ] = await Promise.all([
       ctx.db.user.findUniqueOrThrow({
         where: { id: userId },
-        select: { name: true, avatarUrl: true, currentStreak: true, bestStreak: true },
+        select: {
+          name: true, avatarUrl: true, currentStreak: true, bestStreak: true,
+          lastCompletedWeek: true, planPosition: true, weeklyTargetDays: true,
+        },
       }),
       ctx.db.attendance.findUnique({ where: { userId_date: { userId, date: today } } }),
       ctx.db.attendance.findFirst({ where: { userId }, orderBy: { date: "desc" } }),
@@ -33,6 +39,15 @@ export const dashboardRouter = createTRPCRouter({
       ctx.db.routine.findMany({
         where: { userId, recommendedDays: { has: weekday } },
         include: { _count: { select: { exercises: true } } },
+      }),
+      ctx.db.planSlot.findMany({
+        where: { userId },
+        include: {
+          routine: {
+            select: { id: true, name: true, emoji: true, color: true, _count: { select: { exercises: true } } },
+          },
+        },
+        orderBy: { order: "asc" },
       }),
       ctx.db.attendance.count({
         where: { userId, date: { gte: startOfISOWeek(now), lte: endOfISOWeek(now) } },
@@ -56,11 +71,6 @@ export const dashboardRouter = createTRPCRouter({
         orderBy: { createdAt: "desc" },
         take: 5,
       }),
-      ctx.db.goal.findMany({
-        where: { userId, status: "ACTIVE" },
-        orderBy: { createdAt: "desc" },
-        take: 3,
-      }),
       ctx.db.workout.count({ where: { userId, endedAt: { not: null } } }),
       ctx.db.workout.aggregate({ where: { userId }, _sum: { totalVolume: true } }),
     ]);
@@ -77,8 +87,22 @@ export const dashboardRouter = createTRPCRouter({
     const myIndex = sorted.findIndex((r) => r.userId === userId);
     const myWeekPoints = myIndex >= 0 ? sorted[myIndex]?.points ?? 0 : 0;
 
+    // Siguiente slot del plan (y el que viene después, como adelanto)
+    const plan =
+      planSlots.length > 0
+        ? (() => {
+            const pos = user.planPosition % planSlots.length;
+            return {
+              length: planSlots.length,
+              next: planSlots[pos] ?? null,
+              following: planSlots.length > 1 ? planSlots[(pos + 1) % planSlots.length] ?? null : null,
+            };
+          })()
+        : null;
+
     return {
-      user,
+      user: { ...user, currentStreak: effectiveWeekStreak(user.currentStreak, user.lastCompletedWeek) },
+      plan,
       todayAttendance,
       lastAttendance,
       activeWorkout,
@@ -90,7 +114,6 @@ export const dashboardRouter = createTRPCRouter({
       totalGroupWeekPoints: weekPoints._sum.points ?? 0,
       myWeekPoints,
       unreadNotifications,
-      activeGoals,
       totalWorkouts,
       totalVolume: totalVolume._sum.totalVolume ?? 0,
     };

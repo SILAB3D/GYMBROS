@@ -2,6 +2,7 @@ import { z } from "zod";
 import { hash } from "bcryptjs";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, publicProcedure, protectedProcedure } from "@/server/api/trpc";
+import { effectiveWeekStreak } from "@/server/services/streak";
 
 export const userRouter = createTRPCRouter({
   register: publicProcedure
@@ -42,6 +43,7 @@ export const userRouter = createTRPCRouter({
       select: {
         id: true, email: true, name: true, avatarUrl: true, gymStartDate: true,
         role: true, currentStreak: true, bestStreak: true, createdAt: true, notifyPrefs: true,
+        weeklyTargetDays: true,
       },
     }),
   ),
@@ -50,8 +52,17 @@ export const userRouter = createTRPCRouter({
     .input(
       z.object({
         name: z.string().min(2).max(50).optional(),
-        avatarUrl: z.string().url().nullable().optional(),
+        avatarUrl: z
+          .string()
+          .max(300_000)
+          .refine(
+            (v) => /^https?:\/\//.test(v) || v.startsWith("data:image/"),
+            "Debe ser una URL o una imagen subida",
+          )
+          .nullable()
+          .optional(),
         gymStartDate: z.date().nullable().optional(),
+        weeklyTargetDays: z.number().int().min(0).max(7).optional(),
         notifyPrefs: z.record(z.boolean()).optional(),
       }),
     )
@@ -74,6 +85,33 @@ export const userRouter = createTRPCRouter({
       return { ok: true };
     }),
 
+  /**
+   * Resetea el perfil: borra TODOS los registros de actividad del usuario.
+   * Conserva la cuenta, las rutinas y los ejercicios personalizados.
+   */
+  resetData: protectedProcedure
+    .input(z.object({ confirmation: z.literal("RESET") }))
+    .mutation(async ({ ctx }) => {
+      const userId = ctx.session.user.id;
+      await ctx.db.$transaction([
+        ctx.db.pointEvent.deleteMany({ where: { userId } }),
+        ctx.db.notification.deleteMany({ where: { userId } }),
+        ctx.db.feedComment.deleteMany({ where: { userId } }),
+        ctx.db.feedLike.deleteMany({ where: { userId } }),
+        ctx.db.feedItem.deleteMany({ where: { userId } }),
+        ctx.db.personalRecord.deleteMany({ where: { userId } }),
+        ctx.db.bodyMetric.deleteMany({ where: { userId } }),
+        ctx.db.attendance.deleteMany({ where: { userId } }),
+        ctx.db.workout.deleteMany({ where: { userId } }),
+        ctx.db.userAchievement.deleteMany({ where: { userId } }),
+        ctx.db.user.update({
+          where: { id: userId },
+          data: { currentStreak: 0, bestStreak: 0, lastAttendanceDate: null },
+        }),
+      ]);
+      return { ok: true };
+    }),
+
   // Perfil público: solo datos visibles para el grupo. Nunca métricas corporales.
   publicProfile: protectedProcedure
     .input(z.object({ userId: z.string() }))
@@ -82,27 +120,35 @@ export const userRouter = createTRPCRouter({
         where: { id: input.userId },
         select: {
           id: true, name: true, avatarUrl: true, gymStartDate: true,
-          currentStreak: true, bestStreak: true, createdAt: true,
+          currentStreak: true, bestStreak: true, lastCompletedWeek: true, createdAt: true,
         },
       });
-      const [attendances, workouts, recentPRs, publicGoals, sharedRoutines, achievements, points] =
+      const [attendances, workouts, recentPRs, routines, achievements, points] =
         await Promise.all([
           ctx.db.attendance.count({ where: { userId: user.id } }),
           ctx.db.workout.count({ where: { userId: user.id, endedAt: { not: null } } }),
+          // PRs públicos como evento, pero SIN el peso alcanzado (privado)
           ctx.db.personalRecord.findMany({
             where: { userId: user.id },
             orderBy: { date: "desc" },
             take: 5,
-            include: { exercise: true },
+            select: { id: true, date: true, exercise: { select: { name: true } } },
           }),
-          ctx.db.goal.findMany({
-            where: { userId: user.id, isPublic: true, status: "ACTIVE" },
-            orderBy: { createdAt: "desc" },
-            take: 5,
-          }),
+          // Rutinas públicas: ejercicios, series y repeticiones. Los pesos NUNCA se exponen.
           ctx.db.routine.findMany({
-            where: { userId: user.id, isShared: true },
-            include: { _count: { select: { exercises: true } } },
+            where: { userId: user.id },
+            select: {
+              id: true, name: true, description: true, color: true, emoji: true,
+              recommendedDays: true, estimatedMinutes: true, isShared: true,
+              exercises: {
+                orderBy: { order: "asc" },
+                select: {
+                  id: true, sets: true, reps: true, order: true,
+                  exercise: { select: { name: true, muscleGroup: true } },
+                },
+              },
+            },
+            orderBy: { updatedAt: "desc" },
           }),
           ctx.db.userAchievement.findMany({
             where: { userId: user.id },
@@ -111,16 +157,39 @@ export const userRouter = createTRPCRouter({
           }),
           ctx.db.pointEvent.aggregate({ where: { userId: user.id }, _sum: { points: true } }),
         ]);
+      const { lastCompletedWeek, ...publicUser } = user;
       return {
-        user, attendances, workouts, recentPRs, publicGoals, sharedRoutines, achievements,
+        user: {
+          ...publicUser,
+          currentStreak: effectiveWeekStreak(user.currentStreak, lastCompletedWeek),
+        },
+        attendances, workouts, recentPRs, routines, achievements,
         totalPoints: points._sum.points ?? 0,
       };
     }),
 
-  list: protectedProcedure.query(({ ctx }) =>
-    ctx.db.user.findMany({
-      select: { id: true, name: true, avatarUrl: true, currentStreak: true },
-      orderBy: { name: "asc" },
+  // Calendario de asistencias de un miembro del grupo (solo fechas)
+  memberCalendar: protectedProcedure
+    .input(z.object({ userId: z.string(), year: z.number().int(), month: z.number().int().min(0).max(11) }))
+    .query(async ({ ctx, input }) => {
+      const from = new Date(input.year, input.month, 1);
+      const to = new Date(input.year, input.month + 1, 0, 23, 59, 59);
+      const attendances = await ctx.db.attendance.findMany({
+        where: { userId: input.userId, date: { gte: from, lte: to } },
+        select: { date: true },
+        orderBy: { date: "asc" },
+      });
+      return attendances.map((a) => a.date);
     }),
-  ),
+
+  list: protectedProcedure.query(async ({ ctx }) => {
+    const users = await ctx.db.user.findMany({
+      select: { id: true, name: true, avatarUrl: true, currentStreak: true, lastCompletedWeek: true },
+      orderBy: { name: "asc" },
+    });
+    return users.map(({ lastCompletedWeek, ...u }) => ({
+      ...u,
+      currentStreak: effectiveWeekStreak(u.currentStreak, lastCompletedWeek),
+    }));
+  }),
 });

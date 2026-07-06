@@ -39,13 +39,16 @@ const CATALOG: Array<[string, MuscleGroup]> = [
   ["Remo (máquina)", "CARDIO"], ["Comba", "CARDIO"], ["Escaladora", "CARDIO"],
 ];
 
-const POINTS: Array<[PointType, number]> = [
-  ["ATTENDANCE", 10],
-  ["WORKOUT_COMPLETED", 15],
-  ["NEW_PR", 30],
-  ["STREAK_7", 50],
-  ["ROUTINE_SHARED", 10],
-  ["GOAL_COMPLETED", 40],
+const POINT_RULES: Array<{ type: PointType; name: string; points: number }> = [
+  { type: "ATTENDANCE", name: "Ir al gimnasio", points: 10 },
+  { type: "WORKOUT_COMPLETED", name: "Completar rutina", points: 15 },
+  { type: "NEW_PR", name: "Nuevo PR", points: 30 },
+  { type: "ROUTINE_SHARED", name: "Compartir rutina", points: 10 },
+  { type: "STREAK_WEEK1", name: "Racha: 1 semana cumplida", points: 15 },
+  { type: "STREAK_WEEK2", name: "Racha: 2 semanas seguidas", points: 25 },
+  { type: "STREAK_WEEK3", name: "Racha: 3 semanas seguidas", points: 35 },
+  { type: "STREAK_MONTH", name: "Racha: 1 mes seguido", points: 45 },
+  { type: "STREAK_CRACK", name: "Crack: semana extra tras 1 mes", points: 45 },
 ];
 
 const ACHIEVEMENTS: Array<{ code: string; name: string; description: string; icon: string; rarity: Rarity }> = [
@@ -54,23 +57,36 @@ const ACHIEVEMENTS: Array<{ code: string; name: string; description: string; ico
   { code: "WORKOUTS_100", name: "100 entrenamientos", description: "Completa 100 entrenamientos", icon: "💯", rarity: "EPICO" },
   { code: "FIRST_PR", name: "Primer PR", description: "Registra tu primer récord personal", icon: "🏋️", rarity: "COMUN" },
   { code: "PR_10", name: "10 PRs", description: "Consigue 10 récords personales", icon: "📈", rarity: "RARO" },
-  { code: "STREAK_7", name: "Racha de 7 días", description: "Entrena 7 días seguidos", icon: "🔥", rarity: "RARO" },
-  { code: "STREAK_30", name: "Racha de 30 días", description: "Entrena 30 días seguidos", icon: "🌋", rarity: "LEGENDARIO" },
+  { code: "STREAK_7", name: "Racha de 1 mes", description: "Cumple tu plan 4 semanas seguidas", icon: "🔥", rarity: "RARO" },
+  { code: "STREAK_30", name: "Racha de 6 meses", description: "Cumple tu plan 26 semanas seguidas", icon: "🌋", rarity: "LEGENDARIO" },
   { code: "VOLUME_1000", name: "1.000 kg levantados", description: "Acumula 1.000 kg de volumen total", icon: "🏗️", rarity: "COMUN" },
   { code: "VOLUME_10000", name: "10.000 kg levantados", description: "Acumula 10.000 kg de volumen total", icon: "🚛", rarity: "EPICO" },
   { code: "ATTENDANCE_100", name: "100 asistencias", description: "Ve al gimnasio 100 veces", icon: "🏛️", rarity: "EPICO" },
 ];
 
 async function main() {
+  // Retirar reglas de puntos legadas
+  await prisma.pointRule.deleteMany({
+    where: { type: { in: ["STREAK_7", "WEEKLY_TARGET", "GOAL_COMPLETED"] } },
+  });
+
   for (const [name, muscleGroup] of CATALOG) {
     const existing = await prisma.exercise.findFirst({ where: { name, createdById: null } });
     if (!existing) await prisma.exercise.create({ data: { name, muscleGroup } });
   }
-  for (const [type, points] of POINTS) {
-    await prisma.pointsConfig.upsert({ where: { type }, update: {}, create: { type, points } });
+  for (const rule of POINT_RULES) {
+    await prisma.pointRule.upsert({
+      where: { type: rule.type },
+      update: {},
+      create: rule,
+    });
   }
   for (const a of ACHIEVEMENTS) {
-    await prisma.achievement.upsert({ where: { code: a.code }, update: {}, create: a });
+    await prisma.achievement.upsert({
+      where: { code: a.code },
+      update: { name: a.name, description: a.description, icon: a.icon, rarity: a.rarity },
+      create: a,
+    });
   }
   console.log("Seed completado ✅");
 }

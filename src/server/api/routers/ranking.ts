@@ -3,6 +3,7 @@ import {
   startOfISOWeek, endOfISOWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, subWeeks, subMonths, subYears,
 } from "date-fns";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
+import { effectiveWeekStreak } from "@/server/services/streak";
 
 type Period = "week" | "month" | "year";
 
@@ -43,7 +44,9 @@ export const rankingRouter = createTRPCRouter({
       const previous = periodRange(input.period, 1);
 
       const [users, currentRanking, previousRanking] = await Promise.all([
-        ctx.db.user.findMany({ select: { id: true, name: true, avatarUrl: true, currentStreak: true } }),
+        ctx.db.user.findMany({
+          select: { id: true, name: true, avatarUrl: true, currentStreak: true, lastCompletedWeek: true },
+        }),
         computeRanking(ctx.db, current.from, current.to),
         computeRanking(ctx.db, previous.from, previous.to),
       ]);
@@ -53,7 +56,10 @@ export const rankingRouter = createTRPCRouter({
 
       // Incluir a todos los usuarios aunque tengan 0 puntos
       const rows = users
-        .map((u) => ({ user: u, points: pointsByUser.get(u.id) ?? 0 }))
+        .map(({ lastCompletedWeek, ...u }) => ({
+          user: { ...u, currentStreak: effectiveWeekStreak(u.currentStreak, lastCompletedWeek) },
+          points: pointsByUser.get(u.id) ?? 0,
+        }))
         .sort((a, b) => b.points - a.points)
         .map((row, i) => {
           const position = i + 1;

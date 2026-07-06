@@ -50,6 +50,13 @@ export const routineRouter = createTRPCRouter({
     if (routine.userId !== ctx.session.user.id && !routine.isShared) {
       throw new TRPCError({ code: "FORBIDDEN" });
     }
+    // Los pesos son privados: se ocultan si la rutina no es tuya
+    if (routine.userId !== ctx.session.user.id) {
+      return {
+        ...routine,
+        exercises: routine.exercises.map((e) => ({ ...e, targetWeight: null, notes: null })),
+      };
+    }
     return routine;
   }),
 
@@ -129,17 +136,21 @@ export const routineRouter = createTRPCRouter({
     return updated;
   }),
 
-  // Rutinas compartidas por el resto del grupo
-  shared: protectedProcedure.query(({ ctx }) =>
-    ctx.db.routine.findMany({
+  // Rutinas compartidas por el resto del grupo (sin pesos: son privados)
+  shared: protectedProcedure.query(async ({ ctx }) => {
+    const routines = await ctx.db.routine.findMany({
       where: { isShared: true, userId: { not: ctx.session.user.id } },
       include: {
         user: { select: { id: true, name: true, avatarUrl: true } },
         exercises: { include: { exercise: true }, orderBy: { order: "asc" } },
       },
       orderBy: { updatedAt: "desc" },
-    }),
-  ),
+    });
+    return routines.map((r) => ({
+      ...r,
+      exercises: r.exercises.map((e) => ({ ...e, targetWeight: null, notes: null })),
+    }));
+  }),
 
   // Clonar la rutina compartida de otro usuario
   clone: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
@@ -163,7 +174,8 @@ export const routineRouter = createTRPCRouter({
         exercises: {
           create: original.exercises.map((e) => ({
             exerciseId: e.exerciseId, order: e.order, sets: e.sets, reps: e.reps,
-            targetWeight: e.targetWeight, restSeconds: e.restSeconds, notes: e.notes,
+            // Los pesos del dueño original son privados: el clon empieza sin pesos
+            targetWeight: null, restSeconds: e.restSeconds, notes: null,
           })),
         },
       },

@@ -29,19 +29,25 @@ model User {
   role         Role      @default(USER)
   createdAt    DateTime  @default(now())
 
-  // caché de rachas para lecturas rápidas (fuente de verdad: Attendance)
-  currentStreak      Int       @default(0)
-  bestStreak         Int       @default(0)
+  // Racha de SEMANAS cumpliendo el plan (weeklyTargetDays). Se reinicia si falla una semana.
+  currentStreak      Int       @default(0) // semanas consecutivas
+  bestStreak         Int       @default(0) // mejor racha histórica (semanas)
+  lastCompletedWeek  DateTime? // lunes (ISO) de la última semana cumplida
   lastAttendanceDate DateTime?
 
   notifyPrefs Json @default("{}")
+
+  // Posición actual dentro del plan de entrenamiento (índice del siguiente slot)
+  planPosition Int @default(0)
+
+  // Días de entrenamiento planificados por semana (0 = sin configurar)
+  weeklyTargetDays Int @default(0)
 
   routines        Routine[]
   workouts        Workout[]
   attendances     Attendance[]
   personalRecords PersonalRecord[]
   bodyMetrics     BodyMetric[]
-  goals           Goal[]
   pointEvents     PointEvent[]
   notifications   Notification[]
   achievements    UserAchievement[]
@@ -49,6 +55,9 @@ model User {
   feedLikes       FeedLike[]
   feedComments    FeedComment[]
   customExercises Exercise[]        @relation("CustomExercises")
+  feedbacks       Feedback[]
+  planSlots       PlanSlot[]
+  chatMessages    ChatMessage[]
 }
 
 // ---------- Ejercicios ----------
@@ -100,6 +109,7 @@ model Routine {
 
   exercises RoutineExercise[]
   workouts  Workout[]
+  planSlots PlanSlot[]
 
   @@index([userId])
   @@index([isShared])
@@ -221,56 +231,33 @@ model BodyMetric {
   @@index([userId, date])
 }
 
-// ---------- Objetivos ----------
-
-enum GoalType {
-  ATTENDANCE_WEEKLY // ir N veces por semana
-  ATTENDANCE_MONTHLY // entrenar N días este mes
-  WORKOUTS_TOTAL // completar N entrenamientos
-  LIFT_WEIGHT // levantar X kg en un ejercicio
-  CUSTOM // progreso manual
-}
-
-enum GoalStatus {
-  ACTIVE
-  COMPLETED
-  FAILED
-  ARCHIVED
-}
-
-model Goal {
-  id           String     @id @default(cuid())
-  userId       String
-  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title        String
-  description  String?
-  type         GoalType   @default(CUSTOM)
-  targetValue  Float
-  currentValue Float      @default(0)
-  unit         String? // "días", "kg", "entrenos"…
-  startDate    DateTime   @default(now())
-  deadline     DateTime?
-  status       GoalStatus @default(ACTIVE)
-  isPublic     Boolean    @default(true)
-  createdAt    DateTime   @default(now())
-
-  @@index([userId, status])
-}
-
 // ---------- Puntos y ranking ----------
 
 enum PointType {
-  ATTENDANCE // +10
-  WORKOUT_COMPLETED // +15
-  NEW_PR // +30
-  STREAK_7 // +50
-  ROUTINE_SHARED // +10
-  GOAL_COMPLETED // +40
+  ATTENDANCE // ir al gimnasio
+  WORKOUT_COMPLETED // completar rutina
+  NEW_PR // nuevo récord
+  STREAK_7 // racha de 7 días
+  ROUTINE_SHARED // compartir rutina
+  STREAK_WEEK1 // racha: 1 semana cumplida (+15)
+  STREAK_WEEK2 // racha: 2 semanas seguidas (+25)
+  STREAK_WEEK3 // racha: 3 semanas seguidas (+35)
+  STREAK_MONTH // racha: 1 mes seguido (+45)
+  STREAK_CRACK // crack: cada semana extra por encima del mes (+45)
+  WEEKLY_TARGET // (legado)
+  GOAL_COMPLETED // (legado)
+  CUSTOM // regla personalizada otorgada por el admin
 }
 
-model PointsConfig {
-  type   PointType @id
-  points Int
+// Reglas de puntuación configurables desde el panel de admin.
+// - type != null: regla estándar disparada automáticamente (puntos editables, se puede desactivar)
+// - type == null: regla personalizada que el admin otorga manualmente a un usuario
+model PointRule {
+  id      String     @id @default(cuid())
+  type    PointType? @unique
+  name    String
+  points  Int
+  enabled Boolean    @default(true)
 }
 
 model PointEvent {
@@ -386,4 +373,49 @@ model FeedComment {
   feedItem   FeedItem @relation(fields: [feedItemId], references: [id], onDelete: Cascade)
   text       String
   createdAt  DateTime @default(now())
+}
+
+// ---------- Feedback de los usuarios (mejoras y bugs) ----------
+
+enum FeedbackStatus {
+  OPEN
+  RESOLVED
+}
+
+model Feedback {
+  id        String         @id @default(cuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  text      String
+  status    FeedbackStatus @default(OPEN)
+  createdAt DateTime       @default(now())
+
+  @@index([status, createdAt])
+}
+
+// ---------- Plan de entrenamiento (orden/alternancia de rutinas y descansos) ----------
+
+// Secuencia ordenada que define qué toca cada día de entrenamiento.
+// routineId == null significa día de descanso.
+model PlanSlot {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order     Int
+  routineId String?
+  routine   Routine? @relation(fields: [routineId], references: [id], onDelete: Cascade)
+
+  @@index([userId, order])
+}
+
+// ---------- Chat de grupo ----------
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  text      String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }

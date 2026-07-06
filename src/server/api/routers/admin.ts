@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PointType, Role } from "@prisma/client";
+import { Role } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, adminProcedure } from "@/server/api/trpc";
 
@@ -32,17 +32,24 @@ export const adminRouter = createTRPCRouter({
     return { ok: true };
   }),
 
-  pointsConfig: adminProcedure.query(({ ctx }) => ctx.db.pointsConfig.findMany()),
+  // ---------- Sistema de puntos personalizable ----------
 
-  setPoints: adminProcedure
-    .input(z.object({ type: z.nativeEnum(PointType), points: z.number().int().min(0).max(1000) }))
-    .mutation(({ ctx, input }) =>
-      ctx.db.pointsConfig.upsert({
-        where: { type: input.type },
-        update: { points: input.points },
-        create: input,
+  listRules: adminProcedure.query(({ ctx }) =>
+    ctx.db.pointRule.findMany({ where: { type: { not: null } }, orderBy: { name: "asc" } }),
+  ),
+
+  updateRule: adminProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        points: z.number().int().min(0).max(1000).optional(),
+        enabled: z.boolean().optional(),
       }),
-    ),
+    )
+    .mutation(({ ctx, input }) => {
+      const { id, ...data } = input;
+      return ctx.db.pointRule.update({ where: { id }, data });
+    }),
 
   deleteFeedItem: adminProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) =>
     ctx.db.feedItem.delete({ where: { id: input.id } }),
