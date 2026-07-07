@@ -1,13 +1,35 @@
 "use client";
 
 import Link from "next/link";
-import { Plus, Copy, Share2, Trash2, Download } from "lucide-react";
+import { useRef, useState } from "react";
+import { Plus, Copy, Share2, Trash2, Download, FileDown, FileUp } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Spinner, EmptyState, Badge, Avatar } from "@/components/ui";
 import { DAY_LABELS } from "@/lib/utils";
 
+type ExportedRoutine = {
+  gymbros: number;
+  name: string;
+  description: string | null;
+  color: string;
+  emoji: string;
+  recommendedDays: number[];
+  estimatedMinutes: number | null;
+  exercises: Array<{
+    name: string;
+    muscleGroup: string;
+    sets: number;
+    reps: number;
+    targetWeight: number | null;
+    restSeconds: number | null;
+    notes: string | null;
+  }>;
+};
+
 export function RoutinesView() {
   const utils = api.useUtils();
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const [importError, setImportError] = useState<string | null>(null);
   const { data: mine, isLoading } = api.routine.mine.useQuery();
   const { data: shared } = api.routine.shared.useQuery();
 
@@ -16,6 +38,67 @@ export function RoutinesView() {
   const remove = api.routine.delete.useMutation({ onSuccess: invalidate });
   const toggleShare = api.routine.toggleShare.useMutation({ onSuccess: invalidate });
   const clone = api.routine.clone.useMutation({ onSuccess: invalidate });
+  const importRoutine = api.routine.importRoutine.useMutation({
+    onSuccess: invalidate,
+    onError: (e) => setImportError(e.message),
+  });
+
+  function exportRoutine(r: NonNullable<typeof mine>[number]) {
+    const data: ExportedRoutine = {
+      gymbros: 1,
+      name: r.name,
+      description: r.description,
+      color: r.color,
+      emoji: r.emoji,
+      recommendedDays: r.recommendedDays,
+      estimatedMinutes: r.estimatedMinutes,
+      exercises: r.exercises.map((e) => ({
+        name: e.exercise.name,
+        muscleGroup: e.exercise.muscleGroup,
+        sets: e.sets,
+        reps: e.reps,
+        targetWeight: e.targetWeight,
+        restSeconds: e.restSeconds,
+        notes: e.notes,
+      })),
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `rutina-${r.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function onImportFile(file: File) {
+    setImportError(null);
+    try {
+      const parsed = JSON.parse(await file.text()) as Partial<ExportedRoutine>;
+      if (!parsed.name || !Array.isArray(parsed.exercises) || parsed.exercises.length === 0) {
+        throw new Error("El archivo no parece una rutina exportada de GymBros");
+      }
+      importRoutine.mutate({
+        name: parsed.name,
+        description: parsed.description ?? null,
+        color: /^#[0-9a-fA-F]{6}$/.test(parsed.color ?? "") ? parsed.color! : "#22c55e",
+        emoji: parsed.emoji ?? "💪",
+        recommendedDays: (parsed.recommendedDays ?? []).filter((d) => d >= 0 && d <= 6),
+        estimatedMinutes: parsed.estimatedMinutes ?? null,
+        exercises: parsed.exercises.map((e) => ({
+          name: String(e.name ?? "Ejercicio"),
+          muscleGroup: (e.muscleGroup ?? "OTRO") as never,
+          sets: e.sets ?? 3,
+          reps: e.reps ?? 10,
+          targetWeight: e.targetWeight ?? null,
+          restSeconds: e.restSeconds ?? null,
+          notes: e.notes ?? null,
+        })),
+      });
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Archivo no válido");
+    }
+  }
 
   if (isLoading) return <Spinner />;
 
@@ -23,12 +106,30 @@ export function RoutinesView() {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Mis rutinas</h1>
-        <Link href="/rutinas/nueva">
-          <Button>
-            <Plus className="h-4 w-4" /> Nueva rutina
+        <div className="flex gap-2">
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void onImportFile(file);
+              e.target.value = "";
+            }}
+          />
+          <Button variant="secondary" onClick={() => importInputRef.current?.click()} loading={importRoutine.isLoading}>
+            <FileUp className="h-4 w-4" /> Importar
           </Button>
-        </Link>
+          <Link href="/rutinas/nueva">
+            <Button>
+              <Plus className="h-4 w-4" /> Nueva rutina
+            </Button>
+          </Link>
+        </div>
       </div>
+
+      {importError && <p className="text-sm text-red-400">Error al importar: {importError}</p>}
 
       {mine?.length === 0 ? (
         <EmptyState
@@ -72,6 +173,9 @@ export function RoutinesView() {
                   onClick={() => toggleShare.mutate({ id: r.id })}
                 >
                   <Share2 className="h-3.5 w-3.5" />
+                </Button>
+                <Button size="sm" variant="ghost" title="Exportar a archivo" onClick={() => exportRoutine(r)}>
+                  <FileDown className="h-3.5 w-3.5" />
                 </Button>
                 <Button
                   size="sm"

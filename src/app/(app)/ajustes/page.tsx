@@ -7,6 +7,7 @@ import { LogOut, Camera } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Input, Label, Spinner, Avatar } from "@/components/ui";
 import { AdminView } from "@/components/views/admin-view";
+import { PushSettings } from "@/components/push-settings";
 
 /** Recorta al centro y redimensiona la imagen a 192×192 px en el navegador. */
 function resizeImage(file: File, size = 192): Promise<string> {
@@ -165,6 +166,8 @@ export default function SettingsPage() {
             Cambiar contraseña
           </Button>
         </Card>
+
+        <PushSettings />
 
         <Card className="flex items-center justify-between">
           <div>

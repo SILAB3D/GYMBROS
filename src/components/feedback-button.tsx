@@ -1,18 +1,41 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MessageSquarePlus } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Modal } from "@/components/ui";
+import { cn } from "@/lib/utils";
 
 /**
  * Botón flotante visible en toda la app: cualquier usuario puede enviar
  * sugerencias de mejora o reportar bugs. Los admins las ven en /admin.
  */
+const HIDE_AFTER_MS = 4000;
+
 export function FeedbackButton() {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [sent, setSent] = useState(false);
+  const [visible, setVisible] = useState(true);
+  const hideTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  // Visible al hacer scroll; se esconde tras unos segundos de inactividad
+  useEffect(() => {
+    const scheduleHide = () => {
+      clearTimeout(hideTimer.current);
+      hideTimer.current = setTimeout(() => setVisible(false), HIDE_AFTER_MS);
+    };
+    const onScroll = () => {
+      setVisible(true);
+      scheduleHide();
+    };
+    scheduleHide();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      clearTimeout(hideTimer.current);
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, []);
 
   const create = api.feedback.create.useMutation({
     onSuccess: () => {
@@ -31,7 +54,10 @@ export function FeedbackButton() {
         onClick={() => setOpen(true)}
         title="Enviar feedback"
         aria-label="Enviar feedback"
-        className="fixed bottom-20 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-border bg-surface-2 text-muted shadow-lg transition hover:text-accent md:bottom-6 md:right-6"
+        className={cn(
+          "fixed bottom-20 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-border bg-surface-2 text-muted shadow-lg transition-all duration-300 hover:text-accent md:bottom-6 md:right-6",
+          !visible && !open && "pointer-events-none translate-y-3 opacity-0",
+        )}
       >
         <MessageSquarePlus className="h-5 w-5" />
       </button>

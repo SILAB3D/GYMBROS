@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { Flame, Trophy, CalendarCheck, ChevronRight, SkipForward } from "lucide-react";
+import { Flame, Trophy, ChevronRight, SkipForward } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Spinner, Stat } from "@/components/ui";
 import { MonthCalendar } from "@/components/month-calendar";
@@ -13,9 +13,6 @@ import { formatKg } from "@/lib/utils";
 export default function DashboardPage() {
   const utils = api.useUtils();
   const { data, isLoading } = api.dashboard.summary.useQuery();
-  const checkIn = api.attendance.checkIn.useMutation({
-    onSuccess: () => utils.dashboard.summary.invalidate(),
-  });
   const advancePlan = api.plan.advance.useMutation({
     onSuccess: () => {
       utils.dashboard.summary.invalidate();
@@ -36,11 +33,7 @@ export default function DashboardPage() {
             {format(now, "EEEE, d 'de' MMMM", { locale: es })}
           </p>
         </div>
-        {!data.todayAttendance && (
-          <Button onClick={() => checkIn.mutate({})} loading={checkIn.isLoading}>
-            <CalendarCheck className="h-4 w-4" /> Hoy fui al gym
-          </Button>
-        )}
+
       </div>
 
       {/* Botón central: registrar / actualizar entrenamiento */}

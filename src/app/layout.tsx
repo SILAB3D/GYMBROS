@@ -5,6 +5,12 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: { default: "GymBros", template: "%s · GymBros" },
   description: "Entrena, compite y progresa con tu grupo",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "GymBros",
+  },
 };
 
 export const viewport: Viewport = {

@@ -31,6 +31,8 @@ export function AdminView() {
     onSuccess: () => {
       setBroadcast({ title: "", body: "" });
       setSent(true);
+      // La notificación también llega al propio admin: refrescar su campanita al momento
+      utils.notification.invalidate();
     },
   });
 

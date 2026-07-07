@@ -2,6 +2,7 @@ import { z } from "zod";
 import { Role } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, adminProcedure } from "@/server/api/trpc";
+import { sendPushToUsers } from "@/server/services/push";
 
 export const adminRouter = createTRPCRouter({
   users: adminProcedure.query(({ ctx }) =>
@@ -62,6 +63,7 @@ export const adminRouter = createTRPCRouter({
       await ctx.db.notification.createMany({
         data: users.map((u) => ({ userId: u.id, type: "SYSTEM" as const, title: input.title, body: input.body })),
       });
+      await sendPushToUsers(ctx.db, users.map((u) => u.id), { title: input.title, body: input.body });
       return { sent: users.length };
     }),
 });

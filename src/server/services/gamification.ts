@@ -1,4 +1,5 @@
 import type { PrismaClient, PointType, NotificationType, FeedType } from "@prisma/client";
+import { sendPushToUsers } from "./push";
 
 /**
  * Servicio central de gamificación: puntos, notificaciones, feed y logros.
@@ -28,6 +29,7 @@ export async function notify(
   body?: string,
 ) {
   await db.notification.create({ data: { userId, type, title, body } });
+  await sendPushToUsers(db, [userId], { title, body });
 }
 
 /** Notifica a todos los miembros del grupo excepto al autor. */
@@ -46,6 +48,7 @@ export async function notifyOthers(
   await db.notification.createMany({
     data: others.map((u) => ({ userId: u.id, type, title, body })),
   });
+  await sendPushToUsers(db, others.map((u) => u.id), { title, body });
 }
 
 export async function addFeed(

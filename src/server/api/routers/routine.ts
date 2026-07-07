@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { MuscleGroup } from "@prisma/client";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { awardPoints, addFeed, checkAchievements } from "@/server/services/gamification";
 
@@ -136,6 +137,72 @@ export const routineRouter = createTRPCRouter({
     }
     return updated;
   }),
+
+  // Importar una rutina desde un archivo JSON exportado
+  importRoutine: protectedProcedure
+    .input(
+      z.object({
+        name: z.string().min(2).max(60),
+        description: z.string().max(300).nullable().optional(),
+        color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#22c55e"),
+        emoji: z.string().max(4).default("💪"),
+        recommendedDays: z.array(z.number().int().min(0).max(6)).default([]),
+        estimatedMinutes: z.number().int().min(5).max(300).nullable().optional(),
+        exercises: z
+          .array(
+            z.object({
+              name: z.string().min(2).max(60),
+              muscleGroup: z.nativeEnum(MuscleGroup).default("OTRO"),
+              sets: z.number().int().min(1).max(20).default(3),
+              reps: z.number().int().min(1).max(100).default(10),
+              targetWeight: z.number().min(0).nullable().optional(),
+              restSeconds: z.number().int().min(0).max(600).nullable().optional(),
+              notes: z.string().max(200).nullable().optional(),
+            }),
+          )
+          .min(1)
+          .max(30),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+      // Resolver cada ejercicio por nombre (catálogo o propios); si no existe, se crea
+      const exerciseIds: string[] = [];
+      for (const e of input.exercises) {
+        let exercise = await ctx.db.exercise.findFirst({
+          where: {
+            name: { equals: e.name, mode: "insensitive" },
+            OR: [{ createdById: null }, { createdById: userId }],
+          },
+        });
+        exercise ??= await ctx.db.exercise.create({
+          data: { name: e.name, muscleGroup: e.muscleGroup, createdById: userId },
+        });
+        exerciseIds.push(exercise.id);
+      }
+      return ctx.db.routine.create({
+        data: {
+          userId,
+          name: input.name,
+          description: input.description,
+          color: input.color,
+          emoji: input.emoji,
+          recommendedDays: input.recommendedDays,
+          estimatedMinutes: input.estimatedMinutes,
+          exercises: {
+            create: input.exercises.map((e, i) => ({
+              exerciseId: exerciseIds[i]!,
+              order: i,
+              sets: e.sets,
+              reps: e.reps,
+              targetWeight: e.targetWeight,
+              restSeconds: e.restSeconds,
+              notes: e.notes,
+            })),
+          },
+        },
+      });
+    }),
 
   // Rutinas compartidas por el resto del grupo (sin pesos: son privados)
   shared: protectedProcedure.query(async ({ ctx }) => {

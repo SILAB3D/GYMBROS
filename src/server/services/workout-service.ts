@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { awardPoints, addFeed, notify, notifyOthers, checkAchievements } from "./gamification";
+import { registerAttendance } from "./attendance-service";
 
 /** Tiempo máximo de una sesión: si se supera, se cierra sola. */
 export const MAX_WORKOUT_MS = 3 * 60 * 60 * 1000; // 3 horas
@@ -46,6 +47,9 @@ export async function finishWorkout(
   });
 
   const user = await db.user.findUniqueOrThrow({ where: { id: userId }, select: { name: true } });
+
+  // Asistencia automática del día del entrenamiento (con puntos y racha si aplica)
+  await registerAttendance(db, userId, workout.startedAt);
 
   // --- Detección automática de PRs (una consulta agregada para toda la sesión) ---
   const exerciseIds = workout.exercises.map((we) => we.exerciseId);

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { LayoutDashboard, Dumbbell, Users, Bell, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/trpc/react";
+import { Logo } from "@/components/logo";
 
 const NAV = [
   { href: "/panel", label: "Panel", icon: LayoutDashboard, match: /^\/panel/ },
@@ -28,7 +29,7 @@ export function Sidebar() {
   return (
     <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r border-border bg-surface p-4 md:flex">
       <Link href="/panel" className="mb-6 flex items-center gap-2 px-2 text-xl font-extrabold">
-        🏋️ Gym<span className="text-accent">Bros</span>
+        <Logo size={28} /> Gym<span className="text-accent">Bros</span>
       </Link>
       <nav className="flex-1 space-y-1">
         {items.map(({ href, label, icon: Icon, match }) => (
@@ -83,8 +84,8 @@ export function MobileHeader() {
   });
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-bg/90 px-4 py-3 backdrop-blur md:hidden">
-      <Link href="/panel" className="text-lg font-extrabold">
-        🏋️ Gym<span className="text-accent">Bros</span>
+      <Link href="/panel" className="flex items-center gap-2 text-lg font-extrabold">
+        <Logo size={24} /> Gym<span className="text-accent">Bros</span>
       </Link>
       <Link href="/notificaciones" className="relative rounded-full p-2 text-muted hover:text-fg">
         <Bell className="h-5 w-5" />
