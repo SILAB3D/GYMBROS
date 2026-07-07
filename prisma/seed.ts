@@ -52,6 +52,12 @@ const POINT_RULES: Array<{ type: PointType; name: string; points: number }> = [
 ];
 
 const ACHIEVEMENTS: Array<{ code: string; name: string; description: string; icon: string; rarity: Rarity }> = [
+  // Uno por cada regla del sistema de puntos
+  { code: "FIRST_ATTENDANCE", name: "Primera asistencia", description: "Registra tu primer día de gimnasio", icon: "📍", rarity: "COMUN" },
+  { code: "ATTENDANCE_25", name: "25 asistencias", description: "Ve al gimnasio 25 veces", icon: "🎽", rarity: "RARO" },
+  { code: "SHARE_FIRST", name: "Espíritu de equipo", description: "Comparte una rutina con el grupo", icon: "🤝", rarity: "COMUN" },
+  { code: "STREAK_WEEK", name: "Primera semana cumplida", description: "Cumple tu plan semanal por primera vez", icon: "✅", rarity: "COMUN" },
+  { code: "STREAK_CRACK", name: "Modo crack", description: "Supera el mes cumpliendo tu plan (5+ semanas seguidas)", icon: "💎", rarity: "EPICO" },
   { code: "FIRST_WORKOUT", name: "Primer entrenamiento", description: "Completa tu primer entrenamiento", icon: "🎯", rarity: "COMUN" },
   { code: "WORKOUTS_10", name: "10 entrenamientos", description: "Completa 10 entrenamientos", icon: "🔟", rarity: "COMUN" },
   { code: "WORKOUTS_100", name: "100 entrenamientos", description: "Completa 100 entrenamientos", icon: "💯", rarity: "EPICO" },

@@ -1,11 +1,16 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { subYears } from "date-fns";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 
 export const chatRouter = createTRPCRouter({
   // Últimos 100 mensajes, en orden cronológico.
   // No incluye avatares: la vista los resuelve con user.list (mucho más ligero).
   list: protectedProcedure.query(async ({ ctx }) => {
+    // Los mensajes con más de 1 año se eliminan automáticamente
+    await ctx.db.chatMessage.deleteMany({
+      where: { createdAt: { lt: subYears(new Date(), 1) } },
+    });
     const messages = await ctx.db.chatMessage.findMany({
       include: { user: { select: { id: true, name: true } } },
       orderBy: { createdAt: "desc" },

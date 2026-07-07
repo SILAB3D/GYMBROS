@@ -73,15 +73,21 @@ async function grant(db: PrismaClient, userId: string, code: string) {
 
 /** Revisa y otorga logros según el estado actual del usuario. */
 export async function checkAchievements(db: PrismaClient, userId: string) {
-  const [workouts, prs, attendances, user, volume] = await Promise.all([
+  const [workouts, prs, attendances, sharedRoutines, user, volume] = await Promise.all([
     db.workout.count({ where: { userId, endedAt: { not: null } } }),
     db.personalRecord.count({ where: { userId } }),
     db.attendance.count({ where: { userId } }),
+    db.routine.count({ where: { userId, isShared: true } }),
     db.user.findUnique({ where: { id: userId }, select: { currentStreak: true, bestStreak: true } }),
     db.workout.aggregate({ where: { userId }, _sum: { totalVolume: true } }),
   ]);
   const totalVolume = volume._sum.totalVolume ?? 0;
 
+  if (attendances >= 1) await grant(db, userId, "FIRST_ATTENDANCE");
+  if (attendances >= 25) await grant(db, userId, "ATTENDANCE_25");
+  if (sharedRoutines >= 1) await grant(db, userId, "SHARE_FIRST");
+  if ((user?.bestStreak ?? 0) >= 1) await grant(db, userId, "STREAK_WEEK");
+  if ((user?.bestStreak ?? 0) >= 5) await grant(db, userId, "STREAK_CRACK");
   if (workouts >= 1) await grant(db, userId, "FIRST_WORKOUT");
   if (workouts >= 10) await grant(db, userId, "WORKOUTS_10");
   if (workouts >= 100) await grant(db, userId, "WORKOUTS_100");

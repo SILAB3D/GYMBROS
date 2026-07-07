@@ -37,6 +37,9 @@ async function reindex(db: typeof import("@/lib/db").db, userId: string) {
 export const planRouter = createTRPCRouter({
   get: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
+    // Migración suave: los antiguos slots de descanso manuales desaparecen
+    // (los descansos ahora se derivan de los días semanales configurados)
+    await ctx.db.planSlot.deleteMany({ where: { userId, routineId: null } });
     const [slots, user] = await Promise.all([
       getOrderedSlots(ctx.db, userId),
       ctx.db.user.findUniqueOrThrow({ where: { id: userId }, select: { planPosition: true } }),
@@ -46,13 +49,11 @@ export const planRouter = createTRPCRouter({
   }),
 
   addSlot: protectedProcedure
-    .input(z.object({ routineId: z.string().nullable() })) // null = descanso
+    .input(z.object({ routineId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
-      if (input.routineId) {
-        const routine = await ctx.db.routine.findUnique({ where: { id: input.routineId } });
-        if (!routine || routine.userId !== userId) throw new TRPCError({ code: "FORBIDDEN" });
-      }
+      const routine = await ctx.db.routine.findUnique({ where: { id: input.routineId } });
+      if (!routine || routine.userId !== userId) throw new TRPCError({ code: "FORBIDDEN" });
       const last = await ctx.db.planSlot.findFirst({ where: { userId }, orderBy: { order: "desc" } });
       return ctx.db.planSlot.create({
         data: { userId, routineId: input.routineId, order: (last?.order ?? -1) + 1 },

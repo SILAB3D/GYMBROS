@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowUp, ArrowDown, Trash2, Plus, MoonStar, CircleDot } from "lucide-react";
+import { ArrowUp, ArrowDown, Trash2, Plus, CircleDot } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Spinner, EmptyState, Badge } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -49,7 +49,7 @@ export function PlanView() {
         <EmptyState
           icon="🗓️"
           title="Todavía no tienes plan"
-          subtitle="Añade tus rutinas en el orden que quieras alternarlas e intercala descansos. Ejemplo: Push → Pull → Pierna → Descanso"
+          subtitle="Añade tus rutinas en el orden que quieras alternarlas. Los descansos se calculan solos según tus días semanales."
         />
       ) : (
         <div className="space-y-2">
@@ -135,7 +135,8 @@ export function PlanView() {
         </div>
         {(me?.weeklyTargetDays ?? 0) > 0 && (
           <p className="text-xs text-accent">
-            Objetivo actual: {me?.weeklyTargetDays} días por semana
+            Objetivo actual: {me?.weeklyTargetDays} días de entreno ·{" "}
+            {7 - (me?.weeklyTargetDays ?? 0)} días de descanso automáticos por semana 😴
           </p>
         )}
       </Card>
@@ -172,13 +173,6 @@ export function PlanView() {
               }}
             >
               <Plus className="h-4 w-4" /> Rutina
-            </Button>
-            <Button
-              variant="secondary"
-              loading={addSlot.isLoading}
-              onClick={() => addSlot.mutate({ routineId: null })}
-            >
-              <MoonStar className="h-4 w-4" /> Descanso
             </Button>
           </div>
         )}

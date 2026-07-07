@@ -25,6 +25,7 @@ export function ChatView() {
       utils.chat.list.invalidate();
     },
   });
+  const sendError = send.error?.message ?? null;
   const remove = api.chat.delete.useMutation({ onSuccess: () => utils.chat.list.invalidate() });
 
   useEffect(() => {
@@ -65,7 +66,7 @@ export function ChatView() {
                 <button
                   title="Borrar mensaje"
                   onClick={() => remove.mutate({ id: m.id })}
-                  className="hidden text-muted transition hover:text-red-400 group-hover:block"
+                  className="text-muted/50 transition hover:text-red-400 md:opacity-0 md:group-hover:opacity-100"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -76,6 +77,11 @@ export function ChatView() {
         <div ref={bottomRef} />
       </div>
 
+      {sendError && (
+        <p className="border-t border-border px-3 pt-2 text-xs text-red-400">
+          No se pudo enviar: {sendError}
+        </p>
+      )}
       <form
         className="flex gap-2 border-t border-border p-3"
         onSubmit={(e) => {

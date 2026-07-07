@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
-import { awardPoints, addFeed } from "@/server/services/gamification";
+import { awardPoints, addFeed, checkAchievements } from "@/server/services/gamification";
 
 const routineExerciseInput = z.object({
   exerciseId: z.string(),
@@ -132,6 +132,7 @@ export const routineRouter = createTRPCRouter({
       await awardPoints(ctx.db, ctx.session.user.id, "ROUTINE_SHARED", { routineId: routine.id });
       const user = await ctx.db.user.findUnique({ where: { id: ctx.session.user.id }, select: { name: true } });
       await addFeed(ctx.db, ctx.session.user.id, "ROUTINE_SHARED", `${user?.name} compartió la rutina ${updated.emoji} ${updated.name}`);
+      await checkAchievements(ctx.db, ctx.session.user.id);
     }
     return updated;
   }),
