@@ -1,11 +1,12 @@
 import { z } from "zod";
 import {
-  startOfISOWeek, endOfISOWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, subWeeks, subMonths, subYears,
+  startOfISOWeek, endOfISOWeek, startOfMonth, endOfMonth, startOfYear, endOfYear,
+  startOfQuarter, endOfQuarter, subWeeks, subMonths, subQuarters, subYears, getQuarter, getYear,
 } from "date-fns";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { effectiveWeekStreak } from "@/server/services/streak";
 
-type Period = "week" | "month" | "year";
+type Period = "week" | "month" | "season" | "year";
 
 function periodRange(period: Period, offset = 0): { from: Date; to: Date } {
   const now = new Date();
@@ -16,6 +17,10 @@ function periodRange(period: Period, offset = 0): { from: Date; to: Date } {
   if (period === "month") {
     const ref = subMonths(now, offset);
     return { from: startOfMonth(ref), to: endOfMonth(ref) };
+  }
+  if (period === "season") {
+    const ref = subQuarters(now, offset);
+    return { from: startOfQuarter(ref), to: endOfQuarter(ref) };
   }
   const ref = subYears(now, offset);
   return { from: startOfYear(ref), to: endOfYear(ref) };
@@ -38,7 +43,7 @@ async function computeRanking(
 
 export const rankingRouter = createTRPCRouter({
   get: protectedProcedure
-    .input(z.object({ period: z.enum(["week", "month", "year"]).default("week") }))
+    .input(z.object({ period: z.enum(["week", "month", "season", "year"]).default("week") }))
     .query(async ({ ctx, input }) => {
       const current = periodRange(input.period);
       const previous = periodRange(input.period, 1);
@@ -79,7 +84,7 @@ export const rankingRouter = createTRPCRouter({
 
   // Desglose de puntos del usuario en el periodo (transparencia del sistema)
   myBreakdown: protectedProcedure
-    .input(z.object({ period: z.enum(["week", "month", "year"]).default("week") }))
+    .input(z.object({ period: z.enum(["week", "month", "season", "year"]).default("week") }))
     .query(async ({ ctx, input }) => {
       const { from, to } = periodRange(input.period);
       const grouped = await ctx.db.pointEvent.groupBy({
@@ -90,4 +95,40 @@ export const rankingRouter = createTRPCRouter({
       });
       return grouped.map((g) => ({ type: g.type, points: g._sum.points ?? 0, count: g._count }));
     }),
+
+  // Palmarés: campeones de las temporadas (trimestres) ya terminadas
+  seasons: protectedProcedure.query(async ({ ctx }) => {
+    const first = await ctx.db.pointEvent.findFirst({ orderBy: { date: "asc" }, select: { date: true } });
+    if (!first) return [];
+    const users = await ctx.db.user.findMany({ select: { id: true, name: true, avatarUrl: true } });
+    const byId = new Map(users.map((u) => [u.id, u]));
+
+    const seasons: Array<{
+      label: string;
+      from: Date;
+      to: Date;
+      podium: Array<{ name: string; avatarUrl: string | null; points: number }>;
+    }> = [];
+    const now = new Date();
+    let cursor = startOfQuarter(now); // el trimestre actual aún no cuenta
+    for (let i = 0; i < 8; i++) {
+      cursor = subQuarters(cursor, 1);
+      const from = startOfQuarter(cursor);
+      const to = endOfQuarter(cursor);
+      if (to < first.date) break;
+      const ranking = await computeRanking(ctx.db, from, to);
+      if (ranking.length === 0) continue;
+      seasons.push({
+        label: `${getYear(from)} · T${getQuarter(from)}`,
+        from,
+        to,
+        podium: ranking.slice(0, 3).map((r) => ({
+          name: byId.get(r.userId)?.name ?? "¿?",
+          avatarUrl: byId.get(r.userId)?.avatarUrl ?? null,
+          points: r.points,
+        })),
+      });
+    }
+    return seasons;
+  }),
 });

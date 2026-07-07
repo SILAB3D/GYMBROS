@@ -48,5 +48,6 @@
     "tsx": "^4.16.0",
     "typescript": "^5.5.3",
     "@types/web-push": "^3.6.3"
-  }
+  },
+  "allowScripts": {}
 }

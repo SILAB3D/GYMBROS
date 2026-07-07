@@ -12,12 +12,48 @@ export const chatRouter = createTRPCRouter({
       where: { createdAt: { lt: subYears(new Date(), 1) } },
     });
     const messages = await ctx.db.chatMessage.findMany({
-      include: { user: { select: { id: true, name: true } } },
+      include: {
+        user: { select: { id: true, name: true } },
+        reactions: { select: { userId: true, emoji: true } },
+      },
       orderBy: { createdAt: "desc" },
       take: 100,
     });
+    // Abrir el chat marca todo como leído
+    await ctx.db.user.update({
+      where: { id: ctx.session.user.id },
+      data: { lastChatReadAt: new Date() },
+    });
     return messages.reverse();
   }),
+
+  unreadCount: protectedProcedure.query(async ({ ctx }) => {
+    const me = await ctx.db.user.findUniqueOrThrow({
+      where: { id: ctx.session.user.id },
+      select: { lastChatReadAt: true },
+    });
+    return ctx.db.chatMessage.count({
+      where: {
+        userId: { not: ctx.session.user.id },
+        createdAt: { gt: me.lastChatReadAt ?? new Date(0) },
+      },
+    });
+  }),
+
+  toggleReaction: protectedProcedure
+    .input(z.object({ messageId: z.string(), emoji: z.enum(["👍", "💪", "🔥"]) }))
+    .mutation(async ({ ctx, input }) => {
+      const key = { messageId: input.messageId, userId: ctx.session.user.id, emoji: input.emoji };
+      const existing = await ctx.db.chatReaction.findUnique({
+        where: { messageId_userId_emoji: key },
+      });
+      if (existing) {
+        await ctx.db.chatReaction.delete({ where: { messageId_userId_emoji: key } });
+        return { reacted: false };
+      }
+      await ctx.db.chatReaction.create({ data: key });
+      return { reacted: true };
+    }),
 
   send: protectedProcedure
     .input(z.object({ text: z.string().trim().min(1).max(1000) }))

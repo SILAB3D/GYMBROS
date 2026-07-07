@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { MuscleGroup } from "@prisma/client";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { awardPoints, addFeed, checkAchievements } from "@/server/services/gamification";
+import { syncWeeklyTarget } from "@/server/services/weekly-target";
 
 const routineExerciseInput = z.object({
   exerciseId: z.string(),
@@ -19,6 +20,7 @@ const routineInput = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#22c55e"),
   emoji: z.string().max(4).default("💪"),
   recommendedDays: z.array(z.number().int().min(0).max(6)).default([]),
+  timesPerWeek: z.number().int().min(0).max(7).default(1),
   estimatedMinutes: z.number().int().min(5).max(300).nullable().optional(),
   exercises: z.array(routineExerciseInput).default([]),
 });
@@ -61,8 +63,8 @@ export const routineRouter = createTRPCRouter({
     return routine;
   }),
 
-  create: protectedProcedure.input(routineInput).mutation(({ ctx, input }) =>
-    ctx.db.routine.create({
+  create: protectedProcedure.input(routineInput).mutation(async ({ ctx, input }) => {
+    const routine = await ctx.db.routine.create({
       data: {
         userId: ctx.session.user.id,
         name: input.name,
@@ -70,20 +72,23 @@ export const routineRouter = createTRPCRouter({
         color: input.color,
         emoji: input.emoji,
         recommendedDays: input.recommendedDays,
+        timesPerWeek: input.timesPerWeek,
         estimatedMinutes: input.estimatedMinutes,
         exercises: {
           create: input.exercises.map((e, i) => ({ ...e, order: i })),
         },
       },
-    }),
-  ),
+    });
+    await syncWeeklyTarget(ctx.db, ctx.session.user.id);
+    return routine;
+  }),
 
   update: protectedProcedure
     .input(routineInput.extend({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       await assertOwner(ctx.db, input.id, ctx.session.user.id);
       const { id, exercises, ...data } = input;
-      return ctx.db.routine.update({
+      const routine = await ctx.db.routine.update({
         where: { id },
         data: {
           ...data,
@@ -93,18 +98,21 @@ export const routineRouter = createTRPCRouter({
           },
         },
       });
+      await syncWeeklyTarget(ctx.db, ctx.session.user.id);
+      return routine;
     }),
 
   delete: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
     await assertOwner(ctx.db, input.id, ctx.session.user.id);
     await ctx.db.routine.delete({ where: { id: input.id } });
+    await syncWeeklyTarget(ctx.db, ctx.session.user.id);
     return { ok: true };
   }),
 
   duplicate: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
     const original = await assertOwner(ctx.db, input.id, ctx.session.user.id);
     const exercises = await ctx.db.routineExercise.findMany({ where: { routineId: input.id } });
-    return ctx.db.routine.create({
+    const copy = await ctx.db.routine.create({
       data: {
         userId: ctx.session.user.id,
         name: `${original.name} (copia)`,
@@ -112,6 +120,7 @@ export const routineRouter = createTRPCRouter({
         color: original.color,
         emoji: original.emoji,
         recommendedDays: original.recommendedDays,
+        timesPerWeek: original.timesPerWeek,
         estimatedMinutes: original.estimatedMinutes,
         exercises: {
           create: exercises.map((e) => ({
@@ -121,6 +130,19 @@ export const routineRouter = createTRPCRouter({
         },
       },
     });
+    await syncWeeklyTarget(ctx.db, ctx.session.user.id);
+    return copy;
+  }),
+
+  // Incluir o excluir la rutina del plan de entrenamiento
+  toggleInPlan: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
+    const routine = await assertOwner(ctx.db, input.id, ctx.session.user.id);
+    const updated = await ctx.db.routine.update({
+      where: { id: input.id },
+      data: { inPlan: !routine.inPlan },
+    });
+    await syncWeeklyTarget(ctx.db, ctx.session.user.id);
+    return updated;
   }),
 
   toggleShare: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
@@ -147,6 +169,7 @@ export const routineRouter = createTRPCRouter({
         color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#22c55e"),
         emoji: z.string().max(4).default("💪"),
         recommendedDays: z.array(z.number().int().min(0).max(6)).default([]),
+        timesPerWeek: z.number().int().min(0).max(7).default(1),
         estimatedMinutes: z.number().int().min(5).max(300).nullable().optional(),
         exercises: z
           .array(
@@ -180,7 +203,7 @@ export const routineRouter = createTRPCRouter({
         });
         exerciseIds.push(exercise.id);
       }
-      return ctx.db.routine.create({
+      const imported = await ctx.db.routine.create({
         data: {
           userId,
           name: input.name,
@@ -188,6 +211,7 @@ export const routineRouter = createTRPCRouter({
           color: input.color,
           emoji: input.emoji,
           recommendedDays: input.recommendedDays,
+          timesPerWeek: input.timesPerWeek,
           estimatedMinutes: input.estimatedMinutes,
           exercises: {
             create: input.exercises.map((e, i) => ({
@@ -202,6 +226,8 @@ export const routineRouter = createTRPCRouter({
           },
         },
       });
+      await syncWeeklyTarget(ctx.db, userId);
+      return imported;
     }),
 
   // Rutinas compartidas por el resto del grupo (sin pesos: son privados)
@@ -229,7 +255,7 @@ export const routineRouter = createTRPCRouter({
     if (!original || (!original.isShared && original.userId !== ctx.session.user.id)) {
       throw new TRPCError({ code: "FORBIDDEN", message: "Esta rutina no está compartida" });
     }
-    return ctx.db.routine.create({
+    const cloned = await ctx.db.routine.create({
       data: {
         userId: ctx.session.user.id,
         name: original.name,
@@ -237,6 +263,7 @@ export const routineRouter = createTRPCRouter({
         color: original.color,
         emoji: original.emoji,
         recommendedDays: original.recommendedDays,
+        timesPerWeek: original.timesPerWeek,
         estimatedMinutes: original.estimatedMinutes,
         clonedFromId: original.id,
         exercises: {
@@ -248,5 +275,7 @@ export const routineRouter = createTRPCRouter({
         },
       },
     });
+    await syncWeeklyTarget(ctx.db, ctx.session.user.id);
+    return cloned;
   }),
 });

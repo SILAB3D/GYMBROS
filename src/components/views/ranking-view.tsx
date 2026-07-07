@@ -8,9 +8,10 @@ import { Card, Spinner, Avatar, Badge } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 const PERIODS = [
-  { key: "week", label: "Semanal" },
-  { key: "month", label: "Mensual" },
-  { key: "year", label: "Anual" },
+  { key: "week", label: "Semana" },
+  { key: "month", label: "Mes" },
+  { key: "season", label: "Temporada" },
+  { key: "year", label: "Año" },
 ] as const;
 
 const POINT_LABELS: Record<string, string> = {
@@ -29,9 +30,12 @@ const POINT_LABELS: Record<string, string> = {
 };
 
 export function RankingView() {
-  const [period, setPeriod] = useState<"week" | "month" | "year">("week");
+  const [period, setPeriod] = useState<"week" | "month" | "season" | "year">("week");
   const { data, isLoading } = api.ranking.get.useQuery({ period });
   const { data: breakdown } = api.ranking.myBreakdown.useQuery({ period });
+  const { data: seasons } = api.ranking.seasons.useQuery(undefined, {
+    enabled: period === "season",
+  });
 
   return (
     <div className="space-y-6">
@@ -126,6 +130,25 @@ export function RankingView() {
               </div>
             ))}
           </Card>
+
+          {/* Palmarés de temporadas pasadas */}
+          {period === "season" && (seasons?.length ?? 0) > 0 && (
+            <Card>
+              <h2 className="mb-3 font-semibold">🏆 Palmarés</h2>
+              <div className="space-y-2">
+                {seasons?.map((s) => (
+                  <div key={s.label} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-surface-2 p-3 text-sm">
+                    <span className="font-semibold">{s.label}</span>
+                    {s.podium.map((p, i) => (
+                      <span key={i} className="text-muted">
+                        {["🥇", "🥈", "🥉"][i]} {p.name} ({p.points})
+                      </span>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
 
           {/* Mi desglose */}
           {(breakdown?.length ?? 0) > 0 && (

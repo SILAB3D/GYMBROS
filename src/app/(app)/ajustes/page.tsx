@@ -3,11 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
 import { signOut } from "next-auth/react";
-import { LogOut, Camera } from "lucide-react";
+import { LogOut, Camera, Wallet, BellRing, Eye } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Input, Label, Spinner, Avatar } from "@/components/ui";
 import { AdminView } from "@/components/views/admin-view";
 import { PushSettings } from "@/components/push-settings";
+import { useViewAsUser } from "@/lib/use-view-as-user";
 
 /** Recorta al centro y redimensiona la imagen a 192×192 px en el navegador. */
 function resizeImage(file: File, size = 192): Promise<string> {
@@ -29,6 +30,24 @@ function resizeImage(file: File, size = 192): Promise<string> {
   });
 }
 
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="px-1 text-xs font-semibold uppercase tracking-wider text-muted">{children}</h2>
+  );
+}
+
+function Toggle({ on, onClick, title }: { on: boolean; onClick: () => void; title: string }) {
+  return (
+    <button
+      title={title}
+      onClick={onClick}
+      className={`h-6 w-11 shrink-0 rounded-full p-0.5 transition ${on ? "bg-accent" : "bg-border"}`}
+    >
+      <span className={`block h-5 w-5 rounded-full bg-bg transition-transform ${on ? "translate-x-5" : ""}`} />
+    </button>
+  );
+}
+
 export default function SettingsPage() {
   const utils = api.useUtils();
   const { data: me, isLoading } = api.user.me.useQuery();
@@ -36,6 +55,7 @@ export default function SettingsPage() {
   const [passwords, setPasswords] = useState({ current: "", next: "" });
   const [message, setMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [viewAsUser, setViewAsUser] = useViewAsUser();
 
   useEffect(() => {
     if (me) {
@@ -50,7 +70,7 @@ export default function SettingsPage() {
   const update = api.user.updateProfile.useMutation({
     onSuccess: () => {
       utils.user.me.invalidate();
-      setMessage("Perfil actualizado ✅");
+      setMessage("Guardado ✅");
     },
   });
   const changePassword = api.user.changePassword.useMutation({
@@ -70,145 +90,210 @@ export default function SettingsPage() {
 
   if (isLoading || !me) return <Spinner />;
 
+  const prefs = (me.notifyPrefs ?? {}) as Record<string, boolean>;
+  const remindersOn = prefs.reminders !== false;
+
   return (
-    <div className="space-y-6">
-      <div className="max-w-lg space-y-6">
+    <div className="space-y-8">
+      <div className="max-w-lg space-y-8">
         <h1 className="text-2xl font-bold">Ajustes</h1>
 
-        <Card className="space-y-4">
-          <h2 className="font-semibold">Perfil</h2>
-          <div className="flex items-center gap-4">
-            <Avatar name={form.name || me.name} src={form.avatarUrl || null} size={64} />
-            <div className="flex-1 space-y-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  try {
-                    const dataUrl = await resizeImage(file);
-                    setForm((f) => ({ ...f, avatarUrl: dataUrl }));
-                  } catch {
-                    setMessage("No se pudo procesar la imagen");
-                  }
-                  e.target.value = "";
-                }}
+        {/* ---------- Perfil ---------- */}
+        <section className="space-y-3">
+          <SectionTitle>Perfil</SectionTitle>
+          <Card className="space-y-4">
+            <div className="flex items-center gap-4">
+              <Avatar name={form.name || me.name} src={form.avatarUrl || null} size={64} />
+              <div className="flex-1 space-y-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    try {
+                      const dataUrl = await resizeImage(file);
+                      setForm((f) => ({ ...f, avatarUrl: dataUrl }));
+                    } catch {
+                      setMessage("No se pudo procesar la imagen");
+                    }
+                    e.target.value = "";
+                  }}
+                />
+                <div className="flex items-center gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()}>
+                    <Camera className="h-4 w-4" /> Subir foto
+                  </Button>
+                  {form.avatarUrl && (
+                    <Button
+                      variant="ghost" size="sm" className="text-red-400"
+                      onClick={() => setForm((f) => ({ ...f, avatarUrl: "" }))}
+                    >
+                      Quitar
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-muted">Se recorta y reduce automáticamente.</p>
+              </div>
+            </div>
+            <div>
+              <Label>Nombre</Label>
+              <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Fecha de inicio en el gimnasio</Label>
+              <Input
+                type="date"
+                value={form.gymStartDate}
+                onChange={(e) => setForm((f) => ({ ...f, gymStartDate: e.target.value }))}
               />
-              <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()}>
-                <Camera className="h-4 w-4" /> Subir foto
-              </Button>
-              {form.avatarUrl && (
-                <Button
-                  variant="ghost" size="sm" className="ml-2 text-red-400"
-                  onClick={() => setForm((f) => ({ ...f, avatarUrl: "" }))}
-                >
-                  Quitar
-                </Button>
-              )}
-              <p className="text-xs text-muted">
-                Se recorta y reduce automáticamente. Recuerda pulsar «Guardar cambios».
+            </div>
+            <Button
+              loading={update.isLoading}
+              onClick={() =>
+                update.mutate({
+                  name: form.name,
+                  avatarUrl: form.avatarUrl || null,
+                  gymStartDate: form.gymStartDate ? new Date(form.gymStartDate) : null,
+                })
+              }
+            >
+              Guardar cambios
+            </Button>
+          </Card>
+        </section>
+
+        {/* ---------- Preferencias ---------- */}
+        <section className="space-y-3">
+          <SectionTitle>Preferencias</SectionTitle>
+          <PushSettings />
+          <Card className="flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h2 className="flex items-center gap-2 font-semibold">
+                <BellRing className="h-4 w-4" /> Recordatorios de entreno
+              </h2>
+              <p className="text-sm text-muted">
+                «Te queda 1 día para cumplir tu semana», «llevas 3 días sin entrenar»…
               </p>
             </div>
-          </div>
-          <div>
-            <Label>Nombre</Label>
-            <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-          </div>
-          <div>
-            <Label>Fecha de inicio en el gimnasio</Label>
-            <Input
-              type="date"
-              value={form.gymStartDate}
-              onChange={(e) => setForm((f) => ({ ...f, gymStartDate: e.target.value }))}
+            <Toggle
+              on={remindersOn}
+              title={remindersOn ? "Desactivar" : "Activar"}
+              onClick={() => update.mutate({ notifyPrefs: { ...prefs, reminders: !remindersOn } })}
             />
-          </div>
-          <Button
-            loading={update.isLoading}
-            onClick={() =>
-              update.mutate({
-                name: form.name,
-                avatarUrl: form.avatarUrl || null,
-                gymStartDate: form.gymStartDate ? new Date(form.gymStartDate) : null,
-              })
-            }
-          >
-            Guardar cambios
-          </Button>
-        </Card>
-
-        <Card className="space-y-4">
-          <h2 className="font-semibold">Cambiar contraseña</h2>
-          <div>
-            <Label>Contraseña actual</Label>
-            <Input
-              type="password" autoComplete="current-password"
-              value={passwords.current}
-              onChange={(e) => setPasswords((p) => ({ ...p, current: e.target.value }))}
+          </Card>
+          <Card className="flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h2 className="flex items-center gap-2 font-semibold">
+                <Wallet className="h-4 w-4" /> Apartado de inversión
+              </h2>
+              <p className="text-sm text-muted">Muestra u oculta la sección de coste en el menú.</p>
+            </div>
+            <Toggle
+              on={me.investmentEnabled}
+              title={me.investmentEnabled ? "Desactivar" : "Activar"}
+              onClick={() => update.mutate({ investmentEnabled: !me.investmentEnabled })}
             />
-          </div>
-          <div>
-            <Label>Nueva contraseña (mínimo 8 caracteres)</Label>
-            <Input
-              type="password" autoComplete="new-password"
-              value={passwords.next}
-              onChange={(e) => setPasswords((p) => ({ ...p, next: e.target.value }))}
-            />
-          </div>
-          <Button
-            variant="secondary"
-            disabled={!passwords.current || passwords.next.length < 8}
-            loading={changePassword.isLoading}
-            onClick={() => changePassword.mutate(passwords)}
-          >
-            Cambiar contraseña
-          </Button>
-        </Card>
+          </Card>
+        </section>
 
-        <PushSettings />
-
-        <Card className="flex items-center justify-between">
-          <div>
-            <h2 className="font-semibold">Sesión</h2>
-            <p className="text-sm text-muted">Tu sesión permanece abierta hasta que la cierres aquí.</p>
-          </div>
-          <Button variant="secondary" onClick={() => signOut({ callbackUrl: "/login" })}>
-            <LogOut className="h-4 w-4" /> Cerrar sesión
-          </Button>
-        </Card>
-
-        <Card className="space-y-3 border-red-500/30">
-          <h2 className="font-semibold text-red-400">Zona peligrosa</h2>
-          <p className="text-sm text-muted">
-            Resetear el perfil elimina <strong>todos</strong> tus registros: entrenamientos,
-            asistencias, rachas, PRs, puntos, notificaciones y logros. Se conservan tu cuenta,
-            tus rutinas y tus ejercicios personalizados. Esta acción no se puede deshacer.
+        {/* ---------- Cuenta ---------- */}
+        <section className="space-y-3">
+          <SectionTitle>Cuenta</SectionTitle>
+          <Card className="space-y-4">
+            <h2 className="font-semibold">Cambiar contraseña</h2>
+            <div>
+              <Label>Contraseña actual</Label>
+              <Input
+                type="password" autoComplete="current-password"
+                value={passwords.current}
+                onChange={(e) => setPasswords((p) => ({ ...p, current: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label>Nueva contraseña (mínimo 8 caracteres)</Label>
+              <Input
+                type="password" autoComplete="new-password"
+                value={passwords.next}
+                onChange={(e) => setPasswords((p) => ({ ...p, next: e.target.value }))}
+              />
+            </div>
+            <Button
+              variant="secondary"
+              disabled={!passwords.current || passwords.next.length < 8}
+              loading={changePassword.isLoading}
+              onClick={() => changePassword.mutate(passwords)}
+            >
+              Cambiar contraseña
+            </Button>
+          </Card>
+          <Card className="flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h2 className="font-semibold">Sesión</h2>
+              <p className="text-sm text-muted">Permanece abierta hasta que la cierres aquí.</p>
+            </div>
+            <Button variant="secondary" onClick={() => signOut({ callbackUrl: "/login" })}>
+              <LogOut className="h-4 w-4" /> Cerrar sesión
+            </Button>
+          </Card>
+          <p className="px-1 text-xs text-muted">
+            Cuenta creada el {format(me.createdAt, "dd/MM/yyyy")} · {me.email}
           </p>
-          <Button
-            variant="danger"
-            loading={resetData.isLoading}
-            onClick={() => {
-              const answer = prompt(
-                'Vas a borrar todos tus registros de forma permanente.\n\nEscribe RESET para confirmar:',
-              );
-              if (answer === "RESET") resetData.mutate({ confirmation: "RESET" });
-              else if (answer !== null) setMessage("Reset cancelado: el texto no coincide");
-            }}
-          >
-            Resetear mi perfil
-          </Button>
-        </Card>
+        </section>
 
-        {message && <p className="text-sm text-accent">{message}</p>}
+        {/* ---------- Zona peligrosa ---------- */}
+        <section className="space-y-3">
+          <SectionTitle>Zona peligrosa</SectionTitle>
+          <Card className="space-y-3 border-red-500/30">
+            <p className="text-sm text-muted">
+              Resetear el perfil elimina <strong>todos</strong> tus registros: entrenamientos,
+              asistencias, rachas, PRs, puntos, notificaciones y logros. Se conservan tu cuenta y
+              tus rutinas. No se puede deshacer.
+            </p>
+            <Button
+              variant="danger"
+              loading={resetData.isLoading}
+              onClick={() => {
+                const answer = prompt(
+                  'Vas a borrar todos tus registros de forma permanente.\n\nEscribe RESET para confirmar:',
+                );
+                if (answer === "RESET") resetData.mutate({ confirmation: "RESET" });
+                else if (answer !== null) setMessage("Reset cancelado: el texto no coincide");
+              }}
+            >
+              Resetear mi perfil
+            </Button>
+          </Card>
+        </section>
 
-        <p className="text-xs text-muted">
-          Cuenta creada el {format(me.createdAt, "dd/MM/yyyy")} · {me.email}
-        </p>
+        {message && <p className="px-1 text-sm text-accent">{message}</p>}
+
+        {/* ---------- Administración ---------- */}
+        {me.role === "ADMIN" && (
+          <section className="space-y-3">
+            <SectionTitle>Administración</SectionTitle>
+            <Card className="flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <h2 className="flex items-center gap-2 font-semibold">
+                  <Eye className="h-4 w-4" /> Ver como usuario estándar
+                </h2>
+                <p className="text-sm text-muted">
+                  Oculta la administración para ver la app como el resto del grupo.
+                </p>
+              </div>
+              <Toggle
+                on={viewAsUser}
+                title={viewAsUser ? "Volver a la vista de admin" : "Activar vista de usuario"}
+                onClick={() => setViewAsUser(!viewAsUser)}
+              />
+            </Card>
+          </section>
+        )}
       </div>
 
-      {me.role === "ADMIN" && (
+      {me.role === "ADMIN" && !viewAsUser && (
         <div className="border-t border-border pt-6">
           <AdminView />
         </div>

@@ -9,6 +9,7 @@ import { es } from "date-fns/locale";
 import { api } from "@/trpc/react";
 import { Button, Card, Input, Modal, Spinner, EmptyState } from "@/components/ui";
 import { WorkoutLauncher } from "@/components/workout-launcher";
+import { RestTimer } from "@/components/rest-timer";
 import { cn, MUSCLE_LABELS } from "@/lib/utils";
 
 export default function ActiveWorkoutPage() {
@@ -103,6 +104,12 @@ export default function ActiveWorkoutPage() {
         </Button>
       </div>
 
+      <RestTimer />
+      <p className="text-xs text-muted">
+        Los valores <span className="italic">en gris</span> vienen de tu última sesión; al editarlos o
+        completar la serie pasan a esta.
+      </p>
+
       {workout.exercises.map((we) => (
         <Card key={we.id} className="space-y-2">
           <p className="font-semibold">{we.exercise.name}</p>
@@ -115,11 +122,13 @@ export default function ActiveWorkoutPage() {
               <Input
                 type="number" min={0} step="0.5" defaultValue={s.weight || ""}
                 placeholder="0"
+                className={cn(!s.touched && "italic text-muted")}
                 onBlur={(e) => updateSet.mutate({ setId: s.id, weight: +e.target.value || 0 })}
               />
               <Input
                 type="number" min={0} defaultValue={s.reps || ""}
                 placeholder="0"
+                className={cn(!s.touched && "italic text-muted")}
                 onBlur={(e) => updateSet.mutate({ setId: s.id, reps: +e.target.value || 0 })}
               />
               <button

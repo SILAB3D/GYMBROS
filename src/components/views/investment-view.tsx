@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { Wallet, Trash2 } from "lucide-react";
+import { Wallet, Trash2, AlertTriangle, RefreshCw } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Input, Label, Spinner, Stat } from "@/components/ui";
 
@@ -20,7 +20,7 @@ const euros = (n: number) => `${n.toLocaleString("es-ES", { minimumFractionDigit
 export function InvestmentView() {
   const utils = api.useUtils();
   const { data, isLoading } = api.subscription.get.useQuery();
-  const [form, setForm] = useState({ startDate: "", periodMonths: "1", customMonths: "", price: "" });
+  const [form, setForm] = useState({ startDate: "", periodMonths: "1", customMonths: "", price: "", autoRenew: false });
   const [editing, setEditing] = useState(false);
 
   useEffect(() => {
@@ -31,21 +31,28 @@ export function InvestmentView() {
         periodMonths: isStandard ? String(data.sub.periodMonths) : "custom",
         customMonths: isStandard ? "" : String(data.sub.periodMonths),
         price: String(data.sub.price),
+        autoRenew: data.sub.autoRenew,
       });
     }
   }, [data?.sub]);
 
   const save = api.subscription.set.useMutation({
     onSuccess: () => {
-      utils.subscription.get.invalidate();
+      utils.subscription.invalidate();
       setEditing(false);
     },
   });
   const remove = api.subscription.remove.useMutation({
     onSuccess: () => {
-      utils.subscription.get.invalidate();
-      setForm({ startDate: "", periodMonths: "1", customMonths: "", price: "" });
+      utils.subscription.invalidate();
+      setForm({ startDate: "", periodMonths: "1", customMonths: "", price: "", autoRenew: false });
     },
+  });
+  const renew = api.subscription.renew.useMutation({
+    onSuccess: () => utils.subscription.invalidate(),
+  });
+  const setAutoRenew = api.subscription.setAutoRenew.useMutation({
+    onSuccess: () => utils.subscription.invalidate(),
   });
 
   if (isLoading) return <Spinner />;
@@ -56,12 +63,12 @@ export function InvestmentView() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="space-y-1.5">
         <h1 className="flex items-center gap-2 text-2xl font-bold">
           <Wallet className="h-6 w-6 text-accent" /> Inversión en gimnasio
         </h1>
         <p className="text-sm text-muted">
-          Cuánto te cuesta cada sesión según tu suscripción y tus asistencias reales.
+          🔒 Privado: solo tú ves esta sección. Coste real por sesión según tus asistencias.
         </p>
       </div>
 
@@ -107,6 +114,15 @@ export function InvestmentView() {
               />
             </div>
           </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={form.autoRenew}
+              onChange={(e) => setForm((f) => ({ ...f, autoRenew: e.target.checked }))}
+              className="h-4 w-4 accent-[hsl(var(--accent))]"
+            />
+            Renovación automática (si no, cada renovación se confirma a mano)
+          </label>
           <div className="flex gap-2">
             <Button
               disabled={!valid}
@@ -116,6 +132,7 @@ export function InvestmentView() {
                   startDate: new Date(form.startDate),
                   periodMonths: months,
                   price: +form.price,
+                  autoRenew: form.autoRenew,
                 })
               }
             >
@@ -132,13 +149,42 @@ export function InvestmentView() {
         data?.sub &&
         data.stats && (
           <>
+            {data.stats.expired && (
+              <Card className="flex flex-wrap items-center justify-between gap-3 border-amber-400/40 bg-amber-400/5">
+                <p className="flex items-center gap-2 text-sm">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
+                  <span>
+                    Tu suscripción terminó el{" "}
+                    <strong>{format(data.stats.coverageEnd, "d MMM yyyy", { locale: es })}</strong>.
+                    Confírmala si has renovado, o actívala en automático.
+                  </span>
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm" loading={renew.isLoading} onClick={() => renew.mutate()}>
+                    <RefreshCw className="h-3.5 w-3.5" /> He renovado (+1 periodo)
+                  </Button>
+                  <Button
+                    size="sm" variant="secondary"
+                    loading={setAutoRenew.isLoading}
+                    onClick={() => setAutoRenew.mutate({ autoRenew: true })}
+                  >
+                    Activar automática
+                  </Button>
+                </div>
+              </Card>
+            )}
+
             <Card className="flex flex-wrap items-center justify-between gap-2 py-3">
               <p className="text-sm">
                 {euros(data.sub.price)}{" "}
                 <span className="text-muted">
                   cada {data.sub.periodMonths === 1 ? "mes" : `${data.sub.periodMonths} meses`} · desde el{" "}
-                  {format(data.sub.startDate, "d MMM yyyy", { locale: es })} · próximo pago:{" "}
-                  {format(data.stats.nextPayment, "d MMM yyyy", { locale: es })}
+                  {format(data.sub.startDate, "d MMM yyyy", { locale: es })} ·{" "}
+                  {data.sub.autoRenew
+                    ? `automática · próximo pago: ${format(data.stats.nextPayment, "d MMM yyyy", { locale: es })}`
+                    : data.stats.expired
+                      ? `caducada desde el ${format(data.stats.coverageEnd, "d MMM yyyy", { locale: es })}`
+                      : `manual · cubierta hasta el ${format(data.stats.coverageEnd, "d MMM yyyy", { locale: es })}`}
                 </span>
               </p>
               <div className="flex gap-1.5">

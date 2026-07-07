@@ -43,6 +43,9 @@ model User {
   // Días de entrenamiento planificados por semana (0 = sin configurar)
   weeklyTargetDays Int @default(0)
 
+  // Mostrar u ocultar el apartado de inversión
+  investmentEnabled Boolean @default(true)
+
   routines        Routine[]
   workouts        Workout[]
   attendances     Attendance[]
@@ -58,8 +61,13 @@ model User {
   feedbacks       Feedback[]
   planSlots         PlanSlot[]
   chatMessages      ChatMessage[]
+  chatReactions     ChatReaction[]
+  pollVotes         PollVote[]
+  pollSnoozes       PollSnooze[]
   pushSubscriptions PushSubscription[]
   gymSubscription   GymSubscription?
+
+  lastChatReadAt DateTime? // para el contador de mensajes no leídos
 }
 
 // ---------- Ejercicios ----------
@@ -102,7 +110,9 @@ model Routine {
   description      String?
   color            String   @default("#22c55e")
   emoji            String   @default("💪")
-  recommendedDays  Int[]    @default([]) // 0=domingo … 6=sábado
+  recommendedDays  Int[]    @default([]) // (legado, ya no se usa en la UI)
+  timesPerWeek     Int      @default(1) // cuántos días a la semana se hace esta rutina
+  inPlan           Boolean  @default(true) // incluida en el plan de entrenamiento
   estimatedMinutes Int?
   isShared         Boolean  @default(false)
   clonedFromId     String?
@@ -174,6 +184,7 @@ model WorkoutSet {
   reps              Int             @default(0)
   weight            Float           @default(0)
   completed         Boolean         @default(false)
+  touched           Boolean         @default(false) // false = valor precargado de la sesión anterior
   notes             String?
 }
 
@@ -419,7 +430,20 @@ model ChatMessage {
   text      String
   createdAt DateTime @default(now())
 
+  reactions ChatReaction[]
+
   @@index([createdAt])
+}
+
+model ChatReaction {
+  id        String      @id @default(cuid())
+  messageId String
+  message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emoji     String
+
+  @@unique([messageId, userId, emoji])
 }
 
 // ---------- Suscripciones push (un registro por dispositivo) ----------
@@ -439,10 +463,53 @@ model PushSubscription {
 // ---------- Suscripción del gimnasio (calculadora de inversión) ----------
 
 model GymSubscription {
-  id           String   @id @default(cuid())
-  userId       String   @unique
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  startDate    DateTime // día del primer pago
-  periodMonths Int      @default(1) // 1=mensual, 2=bimestral, 3=trimestral…
-  price        Float // precio por periodo
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startDate        DateTime // día del primer pago
+  periodMonths     Int      @default(1) // 1=mensual, 2=bimestral, 3=trimestral…
+  price            Float // precio por periodo
+  autoRenew        Boolean  @default(false) // sin esto, cada renovación se confirma a mano
+  confirmedPeriods Int      @default(1) // periodos pagados confirmados (incluye el inicial)
+}
+
+// ---------- Encuestas del admin ----------
+
+model Poll {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  options     String[]
+  closed      Boolean   @default(false)
+  publishAt   DateTime  @default(now()) // programación: ya / 22h / 10h
+  notifiedAt  DateTime? // cuándo se avisó al grupo (null = pendiente)
+  createdAt   DateTime  @default(now())
+
+  votes   PollVote[]
+  snoozes PollSnooze[]
+}
+
+// Aplazamientos de 30 min (máximo 3 por usuario y encuesta)
+model PollSnooze {
+  id     String    @id @default(cuid())
+  pollId String
+  poll   Poll      @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  userId String
+  user   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  count  Int       @default(0)
+  until  DateTime?
+
+  @@unique([pollId, userId])
+}
+
+model PollVote {
+  id          String   @id @default(cuid())
+  pollId      String
+  poll        Poll     @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  optionIndex Int
+  createdAt   DateTime @default(now())
+
+  @@unique([pollId, userId])
 }

@@ -8,6 +8,7 @@ import { Send, Trash2 } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Avatar, Button, Spinner } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { useViewAsUser } from "@/lib/use-view-as-user";
 
 export function ChatView() {
   const { data: session } = useSession();
@@ -17,7 +18,9 @@ export function ChatView() {
   });
   const { data: users } = api.user.list.useQuery();
   const [text, setText] = useState("");
+  const [pickerFor, setPickerFor] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [viewAsUser] = useViewAsUser();
 
   const send = api.chat.send.useMutation({
     onSuccess: () => {
@@ -27,6 +30,12 @@ export function ChatView() {
   });
   const sendError = send.error?.message ?? null;
   const remove = api.chat.delete.useMutation({ onSuccess: () => utils.chat.list.invalidate() });
+  const react = api.chat.toggleReaction.useMutation({
+    onSuccess: () => {
+      utils.chat.list.invalidate();
+      setPickerFor(null);
+    },
+  });
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -38,7 +47,7 @@ export function ChatView() {
   const myId = session?.user.id;
 
   return (
-    <div className="flex h-[65dvh] flex-col rounded-2xl border border-border bg-surface">
+    <div className="-mb-24 flex h-[calc(100dvh-14.5rem)] min-h-[22rem] flex-col overflow-hidden rounded-2xl border border-border bg-surface md:mb-0 md:h-[calc(100dvh-11.5rem)]">
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
         {messages?.length === 0 && (
           <p className="py-10 text-center text-sm text-muted">
@@ -50,19 +59,45 @@ export function ChatView() {
           return (
             <div key={m.id} className={cn("group flex items-end gap-2", mine && "flex-row-reverse")}>
               {!mine && <Avatar name={m.user.name} src={avatarOf(m.user.id)} size={28} />}
-              <div
-                className={cn(
-                  "max-w-[75%] rounded-2xl px-3 py-2",
-                  mine ? "rounded-br-md bg-accent/20" : "rounded-bl-md bg-surface-2",
+              <div className={cn("max-w-[75%]", mine && "flex flex-col items-end")}>
+                <button
+                  type="button"
+                  onClick={() => setPickerFor((p) => (p === m.id ? null : m.id))}
+                  className={cn(
+                    "block w-full rounded-2xl px-3 py-2 text-left",
+                    mine ? "rounded-br-md bg-accent/20" : "rounded-bl-md bg-surface-2",
+                  )}
+                >
+                  {!mine && <p className="text-xs font-semibold text-accent">{m.user.name}</p>}
+                  <p className="whitespace-pre-wrap break-words text-sm">{m.text}</p>
+                  <p className="mt-0.5 text-right text-[10px] text-muted">
+                    {format(m.createdAt, "d MMM · HH:mm", { locale: es })}
+                  </p>
+                </button>
+                {(m.reactions.length > 0 || pickerFor === m.id) && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {(["👍", "💪", "🔥"] as const).map((emoji) => {
+                      const count = m.reactions.filter((r) => r.emoji === emoji).length;
+                      const iReacted = m.reactions.some((r) => r.emoji === emoji && r.userId === myId);
+                      if (count === 0 && pickerFor !== m.id) return null;
+                      return (
+                        <button
+                          key={emoji}
+                          onClick={() => react.mutate({ messageId: m.id, emoji })}
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-xs transition",
+                            iReacted ? "bg-accent/25" : "bg-surface-2 hover:bg-accent/15",
+                            count === 0 && "opacity-60",
+                          )}
+                        >
+                          {emoji}{count > 0 ? ` ${count}` : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
-              >
-                {!mine && <p className="text-xs font-semibold text-accent">{m.user.name}</p>}
-                <p className="whitespace-pre-wrap break-words text-sm">{m.text}</p>
-                <p className="mt-0.5 text-right text-[10px] text-muted">
-                  {format(m.createdAt, "d MMM · HH:mm", { locale: es })}
-                </p>
               </div>
-              {(mine || session?.user.role === "ADMIN") && (
+              {(mine || (session?.user.role === "ADMIN" && !viewAsUser)) && (
                 <button
                   title="Borrar mensaje"
                   onClick={() => remove.mutate({ id: m.id })}
@@ -94,7 +129,7 @@ export function ChatView() {
           onChange={(e) => setText(e.target.value)}
           placeholder="Escribe un mensaje…"
           maxLength={1000}
-          className="h-10 flex-1 rounded-xl border border-border bg-surface-2 px-3 text-sm text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/60"
+          className="h-11 flex-1 rounded-xl border border-border bg-surface-2 px-3 text-base text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/60"
         />
         <Button type="submit" disabled={text.trim().length === 0} loading={send.isLoading}>
           <Send className="h-4 w-4" />

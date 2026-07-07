@@ -24,15 +24,29 @@ export const workoutRouter = createTRPCRouter({
         if (routine.userId !== ctx.session.user.id && !routine.isShared) {
           throw new TRPCError({ code: "FORBIDDEN" });
         }
-        exercisesData = routine.exercises.map((re) => ({
-          exerciseId: re.exerciseId,
-          order: re.order,
-          sets: Array.from({ length: re.sets }, (_, i) => ({
-            setNumber: i + 1,
-            reps: re.reps,
-            weight: re.targetWeight ?? 0,
-          })),
-        }));
+        // Precargar pesos y reps de la ÚLTIMA sesión de cada ejercicio
+        // (si no hay, se usa el objetivo de la rutina). touched=false hasta que se editen.
+        exercisesData = await Promise.all(
+          routine.exercises.map(async (re) => {
+            const lastTime = await ctx.db.workoutExercise.findFirst({
+              where: {
+                exerciseId: re.exerciseId,
+                workout: { userId: ctx.session.user.id, endedAt: { not: null } },
+              },
+              orderBy: { workout: { startedAt: "desc" } },
+              include: { sets: { orderBy: { setNumber: "asc" } } },
+            });
+            return {
+              exerciseId: re.exerciseId,
+              order: re.order,
+              sets: Array.from({ length: re.sets }, (_, i) => ({
+                setNumber: i + 1,
+                reps: lastTime?.sets[i]?.reps ?? re.reps,
+                weight: lastTime?.sets[i]?.weight ?? re.targetWeight ?? 0,
+              })),
+            };
+          }),
+        );
       }
 
       return ctx.db.workout.create({
@@ -84,7 +98,8 @@ export const workoutRouter = createTRPCRouter({
         throw new TRPCError({ code: "FORBIDDEN" });
       }
       const { setId, ...data } = input;
-      return ctx.db.workoutSet.update({ where: { id: setId }, data });
+      // Editar o completar una serie la marca como "de esta sesión"
+      return ctx.db.workoutSet.update({ where: { id: setId }, data: { ...data, touched: true } });
     }),
 
   addSet: protectedProcedure
@@ -145,7 +160,13 @@ export const workoutRouter = createTRPCRouter({
     .query(({ ctx, input }) =>
       ctx.db.workout.findMany({
         where: { userId: ctx.session.user.id, endedAt: { not: null } },
-        include: { routine: true, exercises: { include: { exercise: true } } },
+        include: {
+          routine: true,
+          exercises: {
+            orderBy: { order: "asc" },
+            include: { exercise: true, sets: { orderBy: { setNumber: "asc" } } },
+          },
+        },
         orderBy: { startedAt: "desc" },
         take: input?.limit ?? 20,
       }),

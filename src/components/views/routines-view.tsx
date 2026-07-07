@@ -13,6 +13,7 @@ type ExportedRoutine = {
   color: string;
   emoji: string;
   recommendedDays: number[];
+  timesPerWeek?: number;
   estimatedMinutes: number | null;
   exercises: Array<{
     name: string;
@@ -32,11 +33,17 @@ export function RoutinesView() {
   const { data: mine, isLoading } = api.routine.mine.useQuery();
   const { data: shared } = api.routine.shared.useQuery();
 
-  const invalidate = () => utils.routine.invalidate();
+  const invalidate = () => {
+    utils.routine.invalidate();
+    utils.plan.get.invalidate();
+    utils.dashboard.summary.invalidate();
+    utils.user.me.invalidate();
+  };
   const duplicate = api.routine.duplicate.useMutation({ onSuccess: invalidate });
   const remove = api.routine.delete.useMutation({ onSuccess: invalidate });
   const toggleShare = api.routine.toggleShare.useMutation({ onSuccess: invalidate });
   const clone = api.routine.clone.useMutation({ onSuccess: invalidate });
+  const toggleInPlan = api.routine.toggleInPlan.useMutation({ onSuccess: invalidate });
   const importRoutine = api.routine.importRoutine.useMutation({
     onSuccess: invalidate,
     onError: (e) => setImportError(e.message),
@@ -50,6 +57,7 @@ export function RoutinesView() {
       color: r.color,
       emoji: r.emoji,
       recommendedDays: r.recommendedDays,
+      timesPerWeek: r.timesPerWeek,
       estimatedMinutes: r.estimatedMinutes,
       exercises: r.exercises.map((e) => ({
         name: e.exercise.name,
@@ -83,6 +91,7 @@ export function RoutinesView() {
         color: /^#[0-9a-fA-F]{6}$/.test(parsed.color ?? "") ? parsed.color! : "#22c55e",
         emoji: parsed.emoji ?? "💪",
         recommendedDays: (parsed.recommendedDays ?? []).filter((d) => d >= 0 && d <= 6),
+        timesPerWeek: Math.min(7, Math.max(0, parsed.timesPerWeek ?? 1)),
         estimatedMinutes: parsed.estimatedMinutes ?? null,
         exercises: parsed.exercises.map((e) => ({
           name: String(e.name ?? "Ejercicio"),
@@ -158,8 +167,18 @@ export function RoutinesView() {
                 </div>
                 {r.isShared && <Badge className="bg-accent/15 text-accent">Compartida</Badge>}
               </Link>
-              <div className="flex flex-wrap gap-1.5 text-xs text-muted">
+              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
+                <button
+                  title={r.inPlan ? "Incluida en el plan (pulsa para excluirla)" : "Excluida del plan (pulsa para incluirla)"}
+                  onClick={() => toggleInPlan.mutate({ id: r.id })}
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium transition ${
+                    r.inPlan ? "bg-accent/15 text-accent" : "bg-surface-2 text-muted hover:text-fg"
+                  }`}
+                >
+                  {r.inPlan ? "✓ En el plan" : "Fuera del plan"}
+                </button>
                 <Badge>{r.exercises.length} ejercicios</Badge>
+                {r.timesPerWeek > 0 && <Badge>×{r.timesPerWeek}/semana</Badge>}
                 {r.estimatedMinutes && <Badge>~{r.estimatedMinutes} min</Badge>}
               </div>
               <div className="mt-auto flex items-center gap-1.5">

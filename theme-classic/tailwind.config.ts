@@ -16,24 +16,16 @@ const config: Config = {
           DEFAULT: "hsl(var(--accent))",
           fg: "hsl(var(--accent-fg))",
         },
-        gold: "#ffd60a",
+        gold: "#fbbf24",
         silver: "#cbd5e1",
-        bronze: "#ff9f0a",
+        bronze: "#d97706",
       },
       borderRadius: {
-        xl: "1rem",
-        "2xl": "1.5rem",
+        xl: "0.875rem",
+        "2xl": "1.25rem",
       },
       fontFamily: {
-        sans: [
-          "-apple-system",
-          "BlinkMacSystemFont",
-          "SF Pro Text",
-          "Inter",
-          "Segoe UI",
-          "Roboto",
-          "sans-serif",
-        ],
+        sans: ["Inter", "system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
       },
       keyframes: {
         "pulse-glow": {

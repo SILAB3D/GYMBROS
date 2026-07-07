@@ -31,8 +31,8 @@ function CommunityContent() {
               tab === key ? "bg-accent font-medium text-accent-fg" : "text-muted hover:text-fg",
             )}
           >
-            <Icon className="h-4 w-4" />
-            {label}
+            <Icon className="h-4 w-4 shrink-0" />
+            <span className="hidden min-[460px]:inline">{label}</span>
           </button>
         ))}
       </div>

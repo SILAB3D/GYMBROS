@@ -67,7 +67,19 @@ export async function finishWorkout(
       .filter((s) => s.completed && s.weight > 0)
       .sort((a, b) => b.weight - a.weight)[0];
     if (!best) continue;
-    if (best.weight > (bestByExercise.get(we.exerciseId) ?? 0)) {
+
+    if (!bestByExercise.has(we.exerciseId)) {
+      // Primera vez con este ejercicio: se guarda como marca inicial SILENCIOSA
+      // (sin puntos, sin feed, sin avisos). Los PRs empiezan a contar desde aquí.
+      prSideEffects.push(
+        db.personalRecord.create({
+          data: {
+            userId, exerciseId: we.exerciseId, weight: best.weight, reps: best.reps,
+            isAuto: true, notes: "Marca inicial (primera sesión con este ejercicio)",
+          },
+        }),
+      );
+    } else if (best.weight > (bestByExercise.get(we.exerciseId) ?? 0)) {
       newPRs.push(`${we.exercise.name}: ${best.weight} kg`); // solo lo ve el propio usuario
       prSideEffects.push(
         db.personalRecord.create({

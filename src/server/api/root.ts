@@ -17,6 +17,7 @@ import { planRouter } from "@/server/api/routers/plan";
 import { chatRouter } from "@/server/api/routers/chat";
 import { pushRouter } from "@/server/api/routers/push";
 import { subscriptionRouter } from "@/server/api/routers/subscription";
+import { pollRouter } from "@/server/api/routers/poll";
 
 export const appRouter = createTRPCRouter({
   user: userRouter,
@@ -37,6 +38,7 @@ export const appRouter = createTRPCRouter({
   chat: chatRouter,
   push: pushRouter,
   subscription: subscriptionRouter,
+  poll: pollRouter,
 });
 
 export type AppRouter = typeof appRouter;

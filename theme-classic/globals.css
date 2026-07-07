@@ -2,16 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Tema iOS (última generación). El tema clásico está en /theme-classic. */
 :root {
-  --bg: 0 0% 0%;
-  --surface: 240 3% 11%;
-  --surface-2: 240 3% 17%;
-  --border: 240 2% 23%;
-  --fg: 0 0% 98%;
-  --muted: 240 6% 58%;
-  --accent: 135 63% 50%;
-  --accent-fg: 0 0% 0%;
+  --bg: 240 6% 4%;
+  --surface: 240 5% 8%;
+  --surface-2: 240 5% 12%;
+  --border: 240 5% 16%;
+  --fg: 0 0% 96%;
+  --muted: 240 4% 60%;
+  --accent: 152 76% 47%;
+  --accent-fg: 240 6% 4%;
 }
 
 * {
@@ -22,7 +21,6 @@ body {
   background-color: hsl(var(--bg));
   color: hsl(var(--fg));
   -webkit-font-smoothing: antialiased;
-  letter-spacing: -0.01em;
 }
 
 ::selection {

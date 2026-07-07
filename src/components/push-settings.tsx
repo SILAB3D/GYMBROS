@@ -87,7 +87,7 @@ export function PushSettings() {
 
   return (
     <Card className="space-y-3">
-      <div>
+      <div className="space-y-1">
         <h2 className="font-semibold">Notificaciones en este dispositivo</h2>
         <p className="text-sm text-muted">
           Recibe los PRs del grupo, tus rachas y los avisos aunque la app esté cerrada.

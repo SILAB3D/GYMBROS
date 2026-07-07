@@ -2,13 +2,13 @@
 
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Dumbbell, CalendarRange, CalendarCheck, Medal, Wallet } from "lucide-react";
+import { Dumbbell, CalendarRange, CalendarCheck, Medal, History } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RoutinesView } from "@/components/views/routines-view";
 import { AttendanceView } from "@/components/views/attendance-view";
 import { PRsView } from "@/components/views/prs-view";
 import { PlanView } from "@/components/views/plan-view";
-import { InvestmentView } from "@/components/views/investment-view";
+import { HistoryView } from "@/components/views/history-view";
 import { WorkoutLauncher } from "@/components/workout-launcher";
 
 const TABS = [
@@ -16,7 +16,7 @@ const TABS = [
   { key: "plan", label: "Plan", icon: CalendarRange },
   { key: "asistencia", label: "Asistencia", icon: CalendarCheck },
   { key: "prs", label: "PRs", icon: Medal },
-  { key: "coste", label: "Coste", icon: Wallet },
+  { key: "historial", label: "Historial", icon: History },
 ] as const;
 
 function TrainingContent() {
@@ -38,8 +38,8 @@ function TrainingContent() {
               tab === key ? "bg-accent font-medium text-accent-fg" : "text-muted hover:text-fg",
             )}
           >
-            <Icon className="h-4 w-4" />
-            {label}
+            <Icon className="h-4 w-4 shrink-0" />
+            <span className="hidden min-[460px]:inline">{label}</span>
           </button>
         ))}
       </div>
@@ -48,7 +48,7 @@ function TrainingContent() {
       {tab === "plan" && <PlanView />}
       {tab === "asistencia" && <AttendanceView />}
       {tab === "prs" && <PRsView />}
-      {tab === "coste" && <InvestmentView />}
+      {tab === "historial" && <HistoryView />}
     </div>
   );
 }

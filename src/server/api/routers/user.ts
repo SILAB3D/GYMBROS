@@ -43,7 +43,7 @@ export const userRouter = createTRPCRouter({
       select: {
         id: true, email: true, name: true, avatarUrl: true, gymStartDate: true,
         role: true, currentStreak: true, bestStreak: true, createdAt: true, notifyPrefs: true,
-        weeklyTargetDays: true,
+        weeklyTargetDays: true, investmentEnabled: true,
       },
     }),
   ),
@@ -62,7 +62,7 @@ export const userRouter = createTRPCRouter({
           .nullable()
           .optional(),
         gymStartDate: z.date().nullable().optional(),
-        weeklyTargetDays: z.number().int().min(0).max(7).optional(),
+        investmentEnabled: z.boolean().optional(),
         notifyPrefs: z.record(z.boolean()).optional(),
       }),
     )
@@ -106,7 +106,13 @@ export const userRouter = createTRPCRouter({
         ctx.db.userAchievement.deleteMany({ where: { userId } }),
         ctx.db.user.update({
           where: { id: userId },
-          data: { currentStreak: 0, bestStreak: 0, lastAttendanceDate: null },
+          data: {
+            currentStreak: 0,
+            bestStreak: 0,
+            lastAttendanceDate: null,
+            lastCompletedWeek: null,
+            planPosition: 0,
+          },
         }),
       ]);
       return { ok: true };

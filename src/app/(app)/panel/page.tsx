@@ -39,6 +39,7 @@ export default function DashboardPage() {
       {/* Botón central: registrar / actualizar entrenamiento */}
       <WorkoutLauncher />
 
+
       {/* Stats rápidas */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat
@@ -180,25 +181,6 @@ export default function DashboardPage() {
 
       </div>
 
-      {/* Notificaciones recientes */}
-      {data.unreadNotifications.length > 0 && (
-        <Card>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold">Notificaciones</h2>
-            <Link href="/notificaciones" className="text-xs text-accent hover:underline">
-              Ver todas
-            </Link>
-          </div>
-          <div className="space-y-2">
-            {data.unreadNotifications.map((n) => (
-              <div key={n.id} className="rounded-xl bg-surface-2 p-3 text-sm">
-                <p className="font-medium">{n.title}</p>
-                {n.body && <p className="text-xs text-muted">{n.body}</p>}
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
 
     </div>
   );

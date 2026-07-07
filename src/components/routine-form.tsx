@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, GripVertical, Search, Globe, Lock } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Input, Label, Modal } from "@/components/ui";
-import Link from "next/link";
 import { MUSCLE_LABELS, cn } from "@/lib/utils";
 import { matchesExercise } from "@/lib/exercise-search";
 import type { MuscleGroup } from "@prisma/client";
@@ -29,6 +28,7 @@ export type RoutineFormValue = {
   color: string;
   emoji: string;
   recommendedDays: number[];
+  timesPerWeek: number;
   estimatedMinutes: number | null;
   exercises: RoutineFormExercise[];
 };
@@ -43,37 +43,75 @@ export function RoutineForm({
   const router = useRouter();
   const utils = api.useUtils();
   const { data: catalog } = api.exercise.list.useQuery();
-  const { data: plan } = api.plan.get.useQuery();
+
   const [form, setForm] = useState<RoutineFormValue>(
     initial ?? {
       name: "", description: "", color: "#22c55e", emoji: "💪",
-      recommendedDays: [], estimatedMinutes: 60, exercises: [],
+      recommendedDays: [], timesPerWeek: 1, estimatedMinutes: 60, exercises: [],
     },
   );
   const [pickerOpen, setPickerOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [planChoice, setPlanChoice] = useState<string>("end"); // "end" | "none" | índice
+  const [draftRestored, setDraftRestored] = useState(false);
+  const draftKey = `gymbros-routine-draft-${routineId ?? "nueva"}`;
+  const draftLoaded = useRef(false);
+
+  // Recuperar el borrador si se cerró la app o se cambió de apartado a mitad
+  useEffect(() => {
+    if (draftLoaded.current) return;
+    draftLoaded.current = true;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (raw) {
+        const draft = JSON.parse(raw) as RoutineFormValue;
+        if (draft && typeof draft.name === "string" && Array.isArray(draft.exercises)) {
+          setForm(draft);
+          setDraftRestored(true);
+        }
+      }
+    } catch {
+      /* borrador ilegible: se ignora */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Autoguardado del borrador con cada cambio
+  useEffect(() => {
+    if (!draftLoaded.current) return;
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(draftKey, JSON.stringify(form));
+      } catch {
+        /* almacenamiento lleno: se ignora */
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [form, draftKey]);
+
+  function discardDraft() {
+    localStorage.removeItem(draftKey);
+    setForm(
+      initial ?? {
+        name: "", description: "", color: "#22c55e", emoji: "💪",
+        recommendedDays: [], timesPerWeek: 1, estimatedMinutes: 60, exercises: [],
+      },
+    );
+    setDraftRestored(false);
+  }
+
   const [newExercise, setNewExercise] = useState({ name: "", muscleGroup: "PECHO" as MuscleGroup });
 
   const onSuccess = async () => {
-    await utils.routine.invalidate();
+    localStorage.removeItem(draftKey);
+    await Promise.all([
+      utils.routine.invalidate(),
+      utils.plan.get.invalidate(),
+      utils.dashboard.summary.invalidate(),
+      utils.user.me.invalidate(),
+    ]);
     router.push("/rutinas");
   };
-  const addSlot = api.plan.addSlot.useMutation();
-  const create = api.routine.create.useMutation({
-    onSuccess: async (created) => {
-      // Colocar la rutina nueva en el plan según lo elegido
-      if (planChoice !== "none") {
-        await addSlot.mutateAsync({
-          routineId: created.id,
-          position: planChoice === "end" ? undefined : Number(planChoice),
-        });
-        await utils.plan.get.invalidate();
-        await utils.dashboard.summary.invalidate();
-      }
-      await onSuccess();
-    },
-  });
+  const create = api.routine.create.useMutation({ onSuccess });
   const update = api.routine.update.useMutation({ onSuccess });
   const createExercise = api.exercise.create.useMutation({
     onSuccess: async (created) => {
@@ -108,6 +146,7 @@ export function RoutineForm({
       color: form.color,
       emoji: form.emoji,
       recommendedDays: form.recommendedDays,
+      timesPerWeek: form.timesPerWeek,
       estimatedMinutes: form.estimatedMinutes,
       exercises: form.exercises.map((e) => ({
         exerciseId: e.exerciseId, sets: e.sets, reps: e.reps,
@@ -132,26 +171,29 @@ export function RoutineForm({
 
   return (
     <div className="space-y-5">
+      {draftRestored && (
+        <Card className="flex items-center justify-between gap-3 border-amber-400/40 bg-amber-400/5 py-3">
+          <p className="text-sm">Se recuperó un borrador sin guardar.</p>
+          <Button size="sm" variant="ghost" onClick={discardDraft}>
+            Descartar borrador
+          </Button>
+        </Card>
+      )}
+
       {/* Transparencia: qué ve el grupo y qué no */}
       <Card className="flex flex-col gap-1.5 border-accent/20 bg-accent/5 py-3 text-xs">
         <p className="flex items-center gap-1.5">
           <Globe className="h-3.5 w-3.5 shrink-0 text-accent" />
-          <span>
-            <strong>Público para el grupo:</strong> nombre de la rutina, ejercicios, series y repeticiones
-            (visibles en tu perfil de Comunidad).
-          </span>
+          <span><strong>Público:</strong> ejercicios, series y repeticiones.</span>
         </p>
         <p className="flex items-center gap-1.5">
           <Lock className="h-3.5 w-3.5 shrink-0 text-muted" />
-          <span>
-            <strong>Privado, solo tú lo ves:</strong> los pesos que configures aquí, los que registres al
-            entrenar, tus notas y el volumen levantado.
-          </span>
+          <span><strong>Privado:</strong> pesos, notas y volumen.</span>
         </p>
       </Card>
 
       <Card className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-3">
           <div>
             <Label>Nombre</Label>
             <Input
@@ -170,6 +212,23 @@ export function RoutineForm({
                 setForm((f) => ({ ...f, estimatedMinutes: e.target.value ? +e.target.value : null }))
               }
             />
+          </div>
+          <div>
+            <Label>Veces por semana</Label>
+            <select
+              value={form.timesPerWeek}
+              onChange={(e) => setForm((f) => ({ ...f, timesPerWeek: +e.target.value }))}
+              className="h-10 w-full rounded-xl border border-border bg-surface-2 px-3 text-sm"
+            >
+              {[0, 1, 2, 3, 4, 5, 6, 7].map((n) => (
+                <option key={n} value={n}>
+                  {n === 0 ? "No cuenta para el plan" : `${n} ${n === 1 ? "día" : "días"} / semana`}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-muted">
+              Se añade a tu plan automáticamente; ordénala en Entrenamiento → Plan.
+            </p>
           </div>
         </div>
         <div>
@@ -209,38 +268,6 @@ export function RoutineForm({
                 </button>
               ))}
             </div>
-          </div>
-          <div className="min-w-56 flex-1">
-            <Label>Orden en tu semana</Label>
-            {routineId ? (
-              <p className="text-sm text-muted">
-                El orden de tus rutinas se gestiona en{" "}
-                <Link href="/entrenamiento?tab=plan" className="text-accent hover:underline">
-                  Entrenamiento → Plan
-                </Link>
-                .
-              </p>
-            ) : (
-              <>
-                <select
-                  value={planChoice}
-                  onChange={(e) => setPlanChoice(e.target.value)}
-                  className="h-10 w-full rounded-xl border border-border bg-surface-2 px-3 text-sm"
-                >
-                  <option value="end">Añadir al final de mi plan</option>
-                  {(plan?.slots ?? []).map((slot, i) => (
-                    <option key={slot.id} value={String(i)}>
-                      Posición {i + 1} — antes de {slot.routine ? `${slot.routine.emoji} ${slot.routine.name}` : "descanso"}
-                    </option>
-                  ))}
-                  <option value="none">No añadirla al plan</option>
-                </select>
-                <p className="mt-1 text-xs text-muted">
-                  Tu plan marca el orden de las rutinas, sin días fijos. Se reordena cuando quieras en
-                  Entrenamiento → Plan.
-                </p>
-              </>
-            )}
           </div>
         </div>
       </Card>

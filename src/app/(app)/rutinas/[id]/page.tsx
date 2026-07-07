@@ -22,6 +22,7 @@ export default function EditRoutinePage() {
           color: routine.color,
           emoji: routine.emoji,
           recommendedDays: routine.recommendedDays,
+          timesPerWeek: routine.timesPerWeek,
           estimatedMinutes: routine.estimatedMinutes,
           exercises: routine.exercises.map((e) => ({
             exerciseId: e.exerciseId,
