@@ -15,8 +15,47 @@ export function PlanView() {
     utils.plan.get.invalidate();
     utils.dashboard.summary.invalidate();
   };
-  const move = api.plan.move.useMutation({ onSuccess: invalidate });
-  const setNext = api.plan.setNext.useMutation({ onSuccess: invalidate });
+  // Reordenación optimista: la lista se mueve al instante y el servidor confirma detrás
+  const move = api.plan.move.useMutation({
+    onMutate: async ({ id, direction }) => {
+      await utils.plan.get.cancel();
+      const previous = utils.plan.get.getData();
+      if (previous) {
+        const nextSlots = [...previous.slots];
+        const index = nextSlots.findIndex((s) => s.id === id);
+        const target = direction === "up" ? index - 1 : index + 1;
+        if (index !== -1 && target >= 0 && target < nextSlots.length) {
+          const [moved] = nextSlots.splice(index, 1);
+          nextSlots.splice(target, 0, moved!);
+          let pos = previous.position;
+          if (pos === index) pos = target;
+          else if (index < pos && target >= pos) pos -= 1;
+          else if (index > pos && target <= pos) pos += 1;
+          utils.plan.get.setData(undefined, { ...previous, slots: nextSlots, position: pos });
+        }
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) utils.plan.get.setData(undefined, context.previous);
+    },
+    onSettled: invalidate,
+  });
+  const setNext = api.plan.setNext.useMutation({
+    onMutate: async ({ id }) => {
+      await utils.plan.get.cancel();
+      const previous = utils.plan.get.getData();
+      if (previous) {
+        const index = previous.slots.findIndex((s) => s.id === id);
+        if (index !== -1) utils.plan.get.setData(undefined, { ...previous, position: index });
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) utils.plan.get.setData(undefined, context.previous);
+    },
+    onSettled: invalidate,
+  });
   const generate = api.plan.generate.useMutation({
     onSuccess: () => {
       invalidate();
@@ -98,13 +137,13 @@ export function PlanView() {
                     </Button>
                   )}
                   <Button
-                    size="sm" variant="ghost" disabled={i === 0 || move.isLoading}
+                    size="sm" variant="ghost" disabled={i === 0}
                     onClick={() => move.mutate({ id: slot.id, direction: "up" })}
                   >
                     <ArrowUp className="h-3.5 w-3.5" />
                   </Button>
                   <Button
-                    size="sm" variant="ghost" disabled={i === slots.length - 1 || move.isLoading}
+                    size="sm" variant="ghost" disabled={i === slots.length - 1}
                     onClick={() => move.mutate({ id: slot.id, direction: "down" })}
                   >
                     <ArrowDown className="h-3.5 w-3.5" />

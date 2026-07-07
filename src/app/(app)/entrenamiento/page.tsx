@@ -1,8 +1,9 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Dumbbell, CalendarRange, CalendarCheck, Medal, History } from "lucide-react";
+import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
 import { RoutinesView } from "@/components/views/routines-view";
 import { AttendanceView } from "@/components/views/attendance-view";
@@ -22,7 +23,28 @@ const TABS = [
 function TrainingContent() {
   const router = useRouter();
   const params = useSearchParams();
+  const utils = api.useUtils();
   const tab = params.get("tab") ?? "rutinas";
+  const [visited, setVisited] = useState<Set<string>>(() => new Set([tab]));
+
+  // Precargar en segundo plano los datos de TODAS las pestañas
+  useEffect(() => {
+    const now = new Date();
+    void utils.routine.mine.prefetch();
+    void utils.plan.get.prefetch();
+    void utils.routine.shared.prefetch();
+    void utils.attendance.stats.prefetch();
+    void utils.attendance.month.prefetch({ year: now.getFullYear(), month: now.getMonth() });
+    void utils.pr.bests.prefetch();
+    void utils.pr.recent.prefetch({ limit: 15 });
+    void utils.exercise.list.prefetch();
+    void utils.workout.history.prefetch({ limit: 30 });
+  }, [utils]);
+
+  // Las pestañas visitadas se mantienen montadas: volver a ellas es instantáneo
+  useEffect(() => {
+    setVisited((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)));
+  }, [tab]);
 
   return (
     <div className="space-y-6">
@@ -44,11 +66,11 @@ function TrainingContent() {
         ))}
       </div>
 
-      {tab === "rutinas" && <RoutinesView />}
-      {tab === "plan" && <PlanView />}
-      {tab === "asistencia" && <AttendanceView />}
-      {tab === "prs" && <PRsView />}
-      {tab === "historial" && <HistoryView />}
+      {visited.has("rutinas") && <div className={tab === "rutinas" ? "" : "hidden"}><RoutinesView /></div>}
+      {visited.has("plan") && <div className={tab === "plan" ? "" : "hidden"}><PlanView /></div>}
+      {visited.has("asistencia") && <div className={tab === "asistencia" ? "" : "hidden"}><AttendanceView /></div>}
+      {visited.has("prs") && <div className={tab === "prs" ? "" : "hidden"}><PRsView /></div>}
+      {visited.has("historial") && <div className={tab === "historial" ? "" : "hidden"}><HistoryView /></div>}
     </div>
   );
 }
