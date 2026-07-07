@@ -49,14 +49,25 @@ export const planRouter = createTRPCRouter({
   }),
 
   addSlot: protectedProcedure
-    .input(z.object({ routineId: z.string() }))
+    .input(
+      z.object({
+        routineId: z.string(),
+        position: z.number().int().min(0).max(50).optional(), // sin posición = al final
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const routine = await ctx.db.routine.findUnique({ where: { id: input.routineId } });
       if (!routine || routine.userId !== userId) throw new TRPCError({ code: "FORBIDDEN" });
-      const last = await ctx.db.planSlot.findFirst({ where: { userId }, orderBy: { order: "desc" } });
+      const count = await ctx.db.planSlot.count({ where: { userId } });
+      const position = Math.min(input.position ?? count, count);
+      // Hacer hueco desplazando los slots posteriores
+      await ctx.db.planSlot.updateMany({
+        where: { userId, order: { gte: position } },
+        data: { order: { increment: 1 } },
+      });
       return ctx.db.planSlot.create({
-        data: { userId, routineId: input.routineId, order: (last?.order ?? -1) + 1 },
+        data: { userId, routineId: input.routineId, order: position },
       });
     }),
 

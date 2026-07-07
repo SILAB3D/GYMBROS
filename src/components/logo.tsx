@@ -1,4 +1,4 @@
-/** Logo de GymBros: mancuerna en diagonal sobre fondo oscuro redondeado. */
+/** Logo de GymBros: disco de pesas con degradado verde sobre fondo oscuro redondeado. */
 export function Logo({ size = 24, className }: { size?: number; className?: string }) {
   return (
     <svg
@@ -16,13 +16,10 @@ export function Logo({ size = 24, className }: { size?: number; className?: stri
         </linearGradient>
       </defs>
       <rect width="512" height="512" rx="115" fill="#0a0a0b" />
-      <g transform="translate(256 256) rotate(-45)">
-        <rect x="-120" y="-13" width="240" height="26" rx="13" fill="url(#gymbros-g)" />
-        <rect x="-150" y="-66" width="34" height="132" rx="15" fill="url(#gymbros-g)" />
-        <rect x="116" y="-66" width="34" height="132" rx="15" fill="url(#gymbros-g)" />
-        <rect x="-108" y="-48" width="28" height="96" rx="13" fill="#22c55e" />
-        <rect x="80" y="-48" width="28" height="96" rx="13" fill="#22c55e" />
-      </g>
+      <circle cx="256" cy="256" r="170" fill="url(#gymbros-g)" />
+      <circle cx="256" cy="256" r="118" fill="#0a0a0b" />
+      <circle cx="256" cy="256" r="96" fill="url(#gymbros-g)" />
+      <circle cx="256" cy="256" r="34" fill="#0a0a0b" />
     </svg>
   );
 }

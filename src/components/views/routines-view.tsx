@@ -5,7 +5,6 @@ import { useRef, useState } from "react";
 import { Plus, Copy, Share2, Trash2, Download, FileDown, FileUp } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Spinner, EmptyState, Badge, Avatar } from "@/components/ui";
-import { DAY_LABELS } from "@/lib/utils";
 
 type ExportedRoutine = {
   gymbros: number;
@@ -118,12 +117,16 @@ export function RoutinesView() {
               e.target.value = "";
             }}
           />
-          <Button variant="secondary" onClick={() => importInputRef.current?.click()} loading={importRoutine.isLoading}>
-            <FileUp className="h-4 w-4" /> Importar
+          <Button
+            variant="secondary" title="Importar rutina"
+            onClick={() => importInputRef.current?.click()}
+            loading={importRoutine.isLoading}
+          >
+            <FileUp className="h-4 w-4" /> <span className="hidden sm:inline">Importar</span>
           </Button>
           <Link href="/rutinas/nueva">
-            <Button>
-              <Plus className="h-4 w-4" /> Nueva rutina
+            <Button title="Nueva rutina">
+              <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Nueva rutina</span>
             </Button>
           </Link>
         </div>
@@ -158,9 +161,6 @@ export function RoutinesView() {
               <div className="flex flex-wrap gap-1.5 text-xs text-muted">
                 <Badge>{r.exercises.length} ejercicios</Badge>
                 {r.estimatedMinutes && <Badge>~{r.estimatedMinutes} min</Badge>}
-                {r.recommendedDays.length > 0 && (
-                  <Badge>{r.recommendedDays.map((d) => DAY_LABELS[d]).join(" · ")}</Badge>
-                )}
               </div>
               <div className="mt-auto flex items-center gap-1.5">
                 <Button size="sm" variant="ghost" title="Duplicar" onClick={() => duplicate.mutate({ id: r.id })}>

@@ -98,8 +98,8 @@ export default function ActiveWorkoutPage() {
             Empezado hace {formatDistanceToNowStrict(workout.startedAt, { locale: es })}
           </p>
         </div>
-        <Button variant="secondary" size="sm" onClick={() => setAddOpen(true)}>
-          <Plus className="h-4 w-4" /> Ejercicio
+        <Button variant="secondary" size="sm" title="Añadir ejercicio" onClick={() => setAddOpen(true)}>
+          <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Ejercicio</span>
         </Button>
       </div>
 

@@ -26,8 +26,8 @@ export function AttendanceView() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Asistencia</h1>
-        <Button onClick={() => checkIn.mutate({})} loading={checkIn.isLoading}>
-          <CalendarCheck className="h-4 w-4" /> Registrar hoy
+        <Button title="Registrar asistencia de hoy" onClick={() => checkIn.mutate({})} loading={checkIn.isLoading}>
+          <CalendarCheck className="h-4 w-4" /> <span className="hidden sm:inline">Registrar hoy</span>
         </Button>
       </div>
 

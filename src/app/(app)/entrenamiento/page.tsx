@@ -2,12 +2,13 @@
 
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Dumbbell, CalendarRange, CalendarCheck, Medal } from "lucide-react";
+import { Dumbbell, CalendarRange, CalendarCheck, Medal, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RoutinesView } from "@/components/views/routines-view";
 import { AttendanceView } from "@/components/views/attendance-view";
 import { PRsView } from "@/components/views/prs-view";
 import { PlanView } from "@/components/views/plan-view";
+import { InvestmentView } from "@/components/views/investment-view";
 import { WorkoutLauncher } from "@/components/workout-launcher";
 
 const TABS = [
@@ -15,6 +16,7 @@ const TABS = [
   { key: "plan", label: "Plan", icon: CalendarRange },
   { key: "asistencia", label: "Asistencia", icon: CalendarCheck },
   { key: "prs", label: "PRs", icon: Medal },
+  { key: "coste", label: "Coste", icon: Wallet },
 ] as const;
 
 function TrainingContent() {
@@ -46,6 +48,7 @@ function TrainingContent() {
       {tab === "plan" && <PlanView />}
       {tab === "asistencia" && <AttendanceView />}
       {tab === "prs" && <PRsView />}
+      {tab === "coste" && <InvestmentView />}
     </div>
   );
 }

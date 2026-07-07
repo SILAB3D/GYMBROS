@@ -8,7 +8,6 @@ import { Flame, Trophy, ChevronLeft, ChevronRight, ChevronDown } from "lucide-re
 import { api } from "@/trpc/react";
 import { Card, Spinner, Avatar, Stat, Badge, Button } from "@/components/ui";
 import { MonthCalendar } from "@/components/month-calendar";
-import { DAY_LABELS } from "@/lib/utils";
 
 export default function PublicProfilePage() {
   const params = useParams<{ id: string }>();
@@ -113,9 +112,6 @@ export default function PublicProfilePage() {
                     <p className="text-xs text-muted">
                       {r.exercises.length} ejercicios
                       {r.estimatedMinutes ? ` · ~${r.estimatedMinutes} min` : ""}
-                      {r.recommendedDays.length > 0
-                        ? ` · ${r.recommendedDays.map((d) => DAY_LABELS[d]).join(" · ")}`
-                        : ""}
                     </p>
                   </div>
                   <ChevronDown className="h-4 w-4 text-muted transition-transform group-open:rotate-180" />

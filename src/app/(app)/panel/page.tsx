@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { Flame, Trophy, ChevronRight, SkipForward } from "lucide-react";
+import { Flame, Trophy, SkipForward } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Spinner, Stat } from "@/components/ui";
 import { MonthCalendar } from "@/components/month-calendar";
@@ -124,25 +124,6 @@ export default function DashboardPage() {
                 </Button>
               </div>
             )
-          ) : data.todayRoutines.length > 0 ? (
-            <div className="space-y-2">
-              {data.todayRoutines.map((r) => (
-                <Link
-                  key={r.id}
-                  href={`/rutinas/${r.id}`}
-                  className="flex items-center justify-between rounded-xl bg-surface-2 p-3 transition hover:bg-border"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="text-xl">{r.emoji}</span>
-                    <span>
-                      <span className="block text-sm font-medium">{r.name}</span>
-                      <span className="text-xs text-muted">{r._count.exercises} ejercicios</span>
-                    </span>
-                  </span>
-                  <ChevronRight className="h-4 w-4 text-muted" />
-                </Link>
-              ))}
-            </div>
           ) : (
             <p className="text-sm text-muted">
               Define el orden de tus rutinas y descansos en{" "}

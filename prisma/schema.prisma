@@ -59,6 +59,7 @@ model User {
   planSlots         PlanSlot[]
   chatMessages      ChatMessage[]
   pushSubscriptions PushSubscription[]
+  gymSubscription   GymSubscription?
 }
 
 // ---------- Ejercicios ----------
@@ -433,4 +434,15 @@ model PushSubscription {
   createdAt DateTime @default(now())
 
   @@index([userId])
+}
+
+// ---------- Suscripción del gimnasio (calculadora de inversión) ----------
+
+model GymSubscription {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startDate    DateTime // día del primer pago
+  periodMonths Int      @default(1) // 1=mensual, 2=bimestral, 3=trimestral…
+  price        Float // precio por periodo
 }

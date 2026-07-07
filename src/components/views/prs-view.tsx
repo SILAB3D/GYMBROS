@@ -44,8 +44,8 @@ export function PRsView() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Récords personales</h1>
-        <Button onClick={() => setAddOpen(true)}>
-          <Plus className="h-4 w-4" /> Registrar PR
+        <Button title="Registrar PR" onClick={() => setAddOpen(true)}>
+          <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Registrar PR</span>
         </Button>
       </div>
 

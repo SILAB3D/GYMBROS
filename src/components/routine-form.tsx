@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { Plus, Trash2, GripVertical, Search, Globe, Lock } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Input, Label, Modal } from "@/components/ui";
-import { MUSCLE_LABELS, DAY_LABELS, cn } from "@/lib/utils";
+import Link from "next/link";
+import { MUSCLE_LABELS, cn } from "@/lib/utils";
 import { matchesExercise } from "@/lib/exercise-search";
 import type { MuscleGroup } from "@prisma/client";
 
@@ -42,6 +43,7 @@ export function RoutineForm({
   const router = useRouter();
   const utils = api.useUtils();
   const { data: catalog } = api.exercise.list.useQuery();
+  const { data: plan } = api.plan.get.useQuery();
   const [form, setForm] = useState<RoutineFormValue>(
     initial ?? {
       name: "", description: "", color: "#22c55e", emoji: "💪",
@@ -50,13 +52,28 @@ export function RoutineForm({
   );
   const [pickerOpen, setPickerOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [planChoice, setPlanChoice] = useState<string>("end"); // "end" | "none" | índice
   const [newExercise, setNewExercise] = useState({ name: "", muscleGroup: "PECHO" as MuscleGroup });
 
   const onSuccess = async () => {
     await utils.routine.invalidate();
     router.push("/rutinas");
   };
-  const create = api.routine.create.useMutation({ onSuccess });
+  const addSlot = api.plan.addSlot.useMutation();
+  const create = api.routine.create.useMutation({
+    onSuccess: async (created) => {
+      // Colocar la rutina nueva en el plan según lo elegido
+      if (planChoice !== "none") {
+        await addSlot.mutateAsync({
+          routineId: created.id,
+          position: planChoice === "end" ? undefined : Number(planChoice),
+        });
+        await utils.plan.get.invalidate();
+        await utils.dashboard.summary.invalidate();
+      }
+      await onSuccess();
+    },
+  });
   const update = api.routine.update.useMutation({ onSuccess });
   const createExercise = api.exercise.create.useMutation({
     onSuccess: async (created) => {
@@ -193,32 +210,37 @@ export function RoutineForm({
               ))}
             </div>
           </div>
-          <div>
-            <Label>Días recomendados</Label>
-            <div className="flex gap-1">
-              {[1, 2, 3, 4, 5, 6, 0].map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() =>
-                    setForm((f) => ({
-                      ...f,
-                      recommendedDays: f.recommendedDays.includes(d)
-                        ? f.recommendedDays.filter((x) => x !== d)
-                        : [...f.recommendedDays, d],
-                    }))
-                  }
-                  className={cn(
-                    "h-8 w-8 rounded-lg text-xs font-medium transition",
-                    form.recommendedDays.includes(d)
-                      ? "bg-accent text-accent-fg"
-                      : "bg-surface-2 text-muted hover:text-fg",
-                  )}
+          <div className="min-w-56 flex-1">
+            <Label>Orden en tu semana</Label>
+            {routineId ? (
+              <p className="text-sm text-muted">
+                El orden de tus rutinas se gestiona en{" "}
+                <Link href="/entrenamiento?tab=plan" className="text-accent hover:underline">
+                  Entrenamiento → Plan
+                </Link>
+                .
+              </p>
+            ) : (
+              <>
+                <select
+                  value={planChoice}
+                  onChange={(e) => setPlanChoice(e.target.value)}
+                  className="h-10 w-full rounded-xl border border-border bg-surface-2 px-3 text-sm"
                 >
-                  {DAY_LABELS[d]}
-                </button>
-              ))}
-            </div>
+                  <option value="end">Añadir al final de mi plan</option>
+                  {(plan?.slots ?? []).map((slot, i) => (
+                    <option key={slot.id} value={String(i)}>
+                      Posición {i + 1} — antes de {slot.routine ? `${slot.routine.emoji} ${slot.routine.name}` : "descanso"}
+                    </option>
+                  ))}
+                  <option value="none">No añadirla al plan</option>
+                </select>
+                <p className="mt-1 text-xs text-muted">
+                  Tu plan marca el orden de las rutinas, sin días fijos. Se reordena cuando quieras en
+                  Entrenamiento → Plan.
+                </p>
+              </>
+            )}
           </div>
         </div>
       </Card>

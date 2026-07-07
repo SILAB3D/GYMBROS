@@ -9,14 +9,12 @@ export const dashboardRouter = createTRPCRouter({
     await autoCloseStaleWorkouts(ctx.db, userId);
     const now = new Date();
     const today = startOfDay(now);
-    const weekday = now.getDay();
 
     const [
       user,
       todayAttendance,
       lastAttendance,
       activeWorkout,
-      todayRoutines,
       planSlots,
       weekAttendances,
       monthAttendances,
@@ -36,10 +34,6 @@ export const dashboardRouter = createTRPCRouter({
       ctx.db.attendance.findUnique({ where: { userId_date: { userId, date: today } } }),
       ctx.db.attendance.findFirst({ where: { userId }, orderBy: { date: "desc" } }),
       ctx.db.workout.findFirst({ where: { userId, endedAt: null }, include: { routine: true } }),
-      ctx.db.routine.findMany({
-        where: { userId, recommendedDays: { has: weekday } },
-        include: { _count: { select: { exercises: true } } },
-      }),
       ctx.db.planSlot.findMany({
         where: { userId },
         include: {
@@ -106,7 +100,6 @@ export const dashboardRouter = createTRPCRouter({
       todayAttendance,
       lastAttendance,
       activeWorkout,
-      todayRoutines,
       weekAttendances,
       monthAttendanceDates: monthAttendances.map((a) => a.date),
       recentPRs,
