@@ -43,7 +43,7 @@ export const userRouter = createTRPCRouter({
       select: {
         id: true, email: true, name: true, avatarUrl: true, gymStartDate: true,
         role: true, currentStreak: true, bestStreak: true, createdAt: true, notifyPrefs: true,
-        weeklyTargetDays: true, investmentEnabled: true,
+        weeklyTargetDays: true, investmentEnabled: true, onboardingDone: true,
       },
     }),
   ),
@@ -69,6 +69,13 @@ export const userRouter = createTRPCRouter({
     .mutation(({ ctx, input }) =>
       ctx.db.user.update({ where: { id: ctx.session.user.id }, data: input }),
     ),
+
+  completeOnboarding: protectedProcedure.mutation(({ ctx }) =>
+    ctx.db.user.update({
+      where: { id: ctx.session.user.id },
+      data: { onboardingDone: true },
+    }),
+  ),
 
   changePassword: protectedProcedure
     .input(z.object({ current: z.string(), next: z.string().min(8) }))

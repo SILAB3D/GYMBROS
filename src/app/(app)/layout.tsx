@@ -3,6 +3,7 @@ import { getServerAuthSession } from "@/server/auth";
 import { Sidebar, BottomNav, MobileHeader } from "@/components/nav";
 import { FeedbackButton } from "@/components/feedback-button";
 import { PollGate } from "@/components/poll-gate";
+import { OnboardingTutorial } from "@/components/onboarding-tutorial";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerAuthSession();
@@ -17,6 +18,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </main>
       <FeedbackButton />
       <PollGate />
+      <OnboardingTutorial />
       <BottomNav />
     </div>
   );

@@ -16,8 +16,55 @@ export function AttendanceView() {
     year: cursor.getFullYear(),
     month: cursor.getMonth(),
   });
+  // Check-in optimista: el día se marca en el calendario y suben los contadores al instante
   const checkIn = api.attendance.checkIn.useMutation({
-    onSuccess: () => utils.attendance.invalidate(),
+    onMutate: async () => {
+      const today = new Date();
+      const monthInput = { year: cursor.getFullYear(), month: cursor.getMonth() };
+      const viewingThisMonth =
+        cursor.getFullYear() === today.getFullYear() && cursor.getMonth() === today.getMonth();
+
+      await Promise.all([utils.attendance.month.cancel(monthInput), utils.attendance.stats.cancel()]);
+      const prevMonth = utils.attendance.month.getData(monthInput);
+      const prevStats = utils.attendance.stats.getData();
+
+      // Si hoy ya está registrado, no tocamos nada (evita contar dos veces)
+      const alreadyToday = (prevMonth ?? []).some(
+        (a) => new Date(a.date).toDateString() === today.toDateString(),
+      );
+      if (alreadyToday) return { prevMonth: undefined, prevStats: undefined, monthInput };
+
+      if (viewingThisMonth && prevMonth) {
+        utils.attendance.month.setData(monthInput, [
+          ...prevMonth,
+          {
+            id: `temp-${Date.now()}`,
+            userId: "",
+            date: today,
+            checkIn: today,
+            checkOut: null,
+            gymName: null,
+            notes: null,
+          },
+        ]);
+      }
+      if (prevStats) {
+        utils.attendance.stats.setData(undefined, {
+          ...prevStats,
+          thisWeek: prevStats.thisWeek + 1,
+          thisMonth: prevStats.thisMonth + 1,
+          thisYear: prevStats.thisYear + 1,
+          total: prevStats.total + 1,
+        });
+      }
+      return { prevMonth, prevStats, monthInput };
+    },
+    onError: (_err, _vars, context) => {
+      if (!context) return;
+      if (context.prevMonth) utils.attendance.month.setData(context.monthInput, context.prevMonth);
+      if (context.prevStats) utils.attendance.stats.setData(undefined, context.prevStats);
+    },
+    onSettled: () => utils.attendance.invalidate(),
   });
 
   if (isLoading || !stats) return <Spinner />;

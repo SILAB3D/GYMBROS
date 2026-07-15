@@ -51,8 +51,24 @@ export function InvestmentView() {
   const renew = api.subscription.renew.useMutation({
     onSuccess: () => utils.subscription.invalidate(),
   });
+  // Cambio optimista del auto-renovado: el interruptor y el aviso reaccionan al instante
   const setAutoRenew = api.subscription.setAutoRenew.useMutation({
-    onSuccess: () => utils.subscription.invalidate(),
+    onMutate: async ({ autoRenew }) => {
+      await utils.subscription.get.cancel();
+      const previous = utils.subscription.get.getData();
+      if (previous?.sub && previous.stats) {
+        utils.subscription.get.setData(undefined, {
+          sub: { ...previous.sub, autoRenew },
+          // al activar la renovación automática la suscripción deja de estar caducada
+          stats: { ...previous.stats, expired: autoRenew ? false : previous.stats.expired },
+        });
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) utils.subscription.get.setData(undefined, context.previous);
+    },
+    onSettled: () => utils.subscription.invalidate(),
   });
 
   if (isLoading) return <Spinner />;

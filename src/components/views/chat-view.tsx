@@ -22,19 +22,75 @@ export function ChatView() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [viewAsUser] = useViewAsUser();
 
+  const myId = session?.user.id;
+
+  // Envío optimista: el mensaje aparece al instante con un id temporal y el servidor confirma detrás
   const send = api.chat.send.useMutation({
-    onSuccess: () => {
+    onMutate: async ({ text: newText }) => {
+      await utils.chat.list.cancel();
+      const previous = utils.chat.list.getData();
       setText("");
-      utils.chat.list.invalidate();
+      if (previous && myId) {
+        const optimistic = {
+          id: `temp-${Date.now()}`,
+          userId: myId,
+          text: newText,
+          createdAt: new Date(),
+          user: { id: myId, name: session?.user.name ?? "" },
+          reactions: [] as { userId: string; emoji: string }[],
+        };
+        utils.chat.list.setData(undefined, [...previous, optimistic]);
+      }
+      return { previous, newText };
     },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) utils.chat.list.setData(undefined, context.previous);
+      if (context?.newText) setText(context.newText); // devolver el texto para reintentar
+    },
+    onSettled: () => utils.chat.list.invalidate(),
   });
   const sendError = send.error?.message ?? null;
-  const remove = api.chat.delete.useMutation({ onSuccess: () => utils.chat.list.invalidate() });
-  const react = api.chat.toggleReaction.useMutation({
-    onSuccess: () => {
-      utils.chat.list.invalidate();
-      setPickerFor(null);
+
+  const remove = api.chat.delete.useMutation({
+    onMutate: async ({ id }) => {
+      await utils.chat.list.cancel();
+      const previous = utils.chat.list.getData();
+      if (previous) utils.chat.list.setData(undefined, previous.filter((m) => m.id !== id));
+      return { previous };
     },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) utils.chat.list.setData(undefined, context.previous);
+    },
+    onSettled: () => utils.chat.list.invalidate(),
+  });
+
+  // Reacción optimista: se pinta/despinta al toque y se confirma detrás
+  const react = api.chat.toggleReaction.useMutation({
+    onMutate: async ({ messageId, emoji }) => {
+      setPickerFor(null);
+      await utils.chat.list.cancel();
+      const previous = utils.chat.list.getData();
+      if (previous && myId) {
+        utils.chat.list.setData(
+          undefined,
+          previous.map((m) => {
+            if (m.id !== messageId) return m;
+            const mine = m.reactions.some((r) => r.emoji === emoji && r.userId === myId);
+            return {
+              ...m,
+              reactions: mine
+                ? m.reactions.filter((r) => !(r.emoji === emoji && r.userId === myId))
+                : [...m.reactions, { userId: myId, emoji }],
+            };
+          }),
+        );
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) utils.chat.list.setData(undefined, context.previous);
+    },
+    onSettled: () => utils.chat.list.invalidate(),
   });
 
   useEffect(() => {
@@ -44,7 +100,6 @@ export function ChatView() {
   if (isLoading) return <Spinner />;
 
   const avatarOf = (userId: string) => users?.find((u) => u.id === userId)?.avatarUrl ?? null;
-  const myId = session?.user.id;
 
   return (
     <div className="-mb-24 flex h-[calc(100dvh-14.5rem)] min-h-[22rem] flex-col overflow-hidden rounded-2xl border border-border bg-surface md:mb-0 md:h-[calc(100dvh-11.5rem)]">

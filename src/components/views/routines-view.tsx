@@ -39,11 +39,50 @@ export function RoutinesView() {
     utils.dashboard.summary.invalidate();
     utils.user.me.invalidate();
   };
+  // Actualiza al instante un campo de una rutina en la lista «mías» y devuelve el estado previo para revertir
+  const optimisticPatch = async (id: string, patch: Partial<NonNullable<typeof mine>[number]>) => {
+    await utils.routine.mine.cancel();
+    const previous = utils.routine.mine.getData();
+    if (previous) {
+      utils.routine.mine.setData(
+        undefined,
+        previous.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+      );
+    }
+    return { previous };
+  };
+  const rollbackMine = (context?: { previous?: ReturnType<typeof utils.routine.mine.getData> }) => {
+    if (context?.previous) utils.routine.mine.setData(undefined, context.previous);
+  };
+
   const duplicate = api.routine.duplicate.useMutation({ onSuccess: invalidate });
-  const remove = api.routine.delete.useMutation({ onSuccess: invalidate });
-  const toggleShare = api.routine.toggleShare.useMutation({ onSuccess: invalidate });
+  const remove = api.routine.delete.useMutation({
+    onMutate: async ({ id }) => {
+      await utils.routine.mine.cancel();
+      const previous = utils.routine.mine.getData();
+      if (previous) utils.routine.mine.setData(undefined, previous.filter((r) => r.id !== id));
+      return { previous };
+    },
+    onError: (_err, _vars, context) => rollbackMine(context),
+    onSettled: invalidate,
+  });
+  const toggleShare = api.routine.toggleShare.useMutation({
+    onMutate: ({ id }) => {
+      const current = utils.routine.mine.getData()?.find((r) => r.id === id);
+      return optimisticPatch(id, { isShared: !current?.isShared });
+    },
+    onError: (_err, _vars, context) => rollbackMine(context),
+    onSettled: invalidate,
+  });
   const clone = api.routine.clone.useMutation({ onSuccess: invalidate });
-  const toggleInPlan = api.routine.toggleInPlan.useMutation({ onSuccess: invalidate });
+  const toggleInPlan = api.routine.toggleInPlan.useMutation({
+    onMutate: ({ id }) => {
+      const current = utils.routine.mine.getData()?.find((r) => r.id === id);
+      return optimisticPatch(id, { inPlan: !current?.inPlan });
+    },
+    onError: (_err, _vars, context) => rollbackMine(context),
+    onSettled: invalidate,
+  });
   const importRoutine = api.routine.importRoutine.useMutation({
     onSuccess: invalidate,
     onError: (e) => setImportError(e.message),

@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
 import { signOut } from "next-auth/react";
-import { LogOut, Camera, Wallet, BellRing, Eye } from "lucide-react";
+import { LogOut, Camera, Wallet, BellRing, Eye, GraduationCap } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Input, Label, Spinner, Avatar } from "@/components/ui";
 import { AdminView } from "@/components/views/admin-view";
 import { PushSettings } from "@/components/push-settings";
 import { useViewAsUser } from "@/lib/use-view-as-user";
+import { useTutorialLaunch } from "@/lib/use-tutorial-launch";
 
 /** Recorta al centro y redimensiona la imagen a 192×192 px en el navegador. */
 function resizeImage(file: File, size = 192): Promise<string> {
@@ -56,6 +57,7 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [viewAsUser, setViewAsUser] = useViewAsUser();
+  const [, setTutorial] = useTutorialLaunch();
 
   useEffect(() => {
     if (me) {
@@ -183,6 +185,17 @@ export default function SettingsPage() {
               title={remindersOn ? "Desactivar" : "Activar"}
               onClick={() => update.mutate({ notifyPrefs: { ...prefs, reminders: !remindersOn } })}
             />
+          </Card>
+          <Card className="flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h2 className="flex items-center gap-2 font-semibold">
+                <GraduationCap className="h-4 w-4" /> Tutorial de bienvenida
+              </h2>
+              <p className="text-sm text-muted">Repasa el recorrido inicial de la app.</p>
+            </div>
+            <Button variant="secondary" size="sm" onClick={() => setTutorial(true)}>
+              Ver tutorial
+            </Button>
           </Card>
           <Card className="flex items-center justify-between gap-4">
             <div className="space-y-1">

@@ -36,7 +36,24 @@ export function PRsView() {
       setForm({ exerciseId: "", weight: "", reps: "1", notes: "" });
     },
   });
-  const remove = api.pr.delete.useMutation({ onSuccess: () => utils.pr.invalidate() });
+  // Borrado optimista: el PR desaparece de la lista al instante
+  const remove = api.pr.delete.useMutation({
+    onMutate: async ({ id }) => {
+      const recentInput = { limit: 15 } as const;
+      await Promise.all([utils.pr.recent.cancel(recentInput), utils.pr.bests.cancel()]);
+      const prevRecent = utils.pr.recent.getData(recentInput);
+      const prevBests = utils.pr.bests.getData();
+      if (prevRecent) utils.pr.recent.setData(recentInput, prevRecent.filter((p) => p.id !== id));
+      if (prevBests) utils.pr.bests.setData(undefined, prevBests.filter((p) => p.id !== id));
+      return { prevRecent, prevBests, recentInput };
+    },
+    onError: (_err, _vars, context) => {
+      if (!context) return;
+      if (context.prevRecent) utils.pr.recent.setData(context.recentInput, context.prevRecent);
+      if (context.prevBests) utils.pr.bests.setData(undefined, context.prevBests);
+    },
+    onSettled: () => utils.pr.invalidate(),
+  });
 
   if (isLoading) return <Spinner />;
 

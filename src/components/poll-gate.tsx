@@ -43,8 +43,8 @@ export function PollGate() {
   const snoozesLeft = 3 - poll.snoozeCount;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[88dvh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-2xl border border-border bg-surface p-5">
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="flex max-h-[88dvh] w-full flex-col gap-4 overflow-y-auto rounded-t-2xl border border-border bg-surface p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:max-w-md sm:rounded-2xl sm:pb-5">
         <div className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted">
             📊 {pending.length === 1 ? "Encuesta del grupo" : `Encuesta ${index + 1} de ${pending.length}`}

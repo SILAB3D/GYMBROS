@@ -46,6 +46,9 @@ model User {
   // Mostrar u ocultar el apartado de inversión
   investmentEnabled Boolean @default(true)
 
+  // Tutorial de bienvenida ya completado
+  onboardingDone Boolean @default(false)
+
   routines        Routine[]
   workouts        Workout[]
   attendances     Attendance[]
