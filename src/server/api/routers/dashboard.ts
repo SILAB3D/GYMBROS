@@ -2,11 +2,14 @@ import { startOfDay, startOfISOWeek, endOfISOWeek, startOfMonth, endOfMonth } fr
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { autoCloseStaleWorkouts } from "@/server/services/workout-service";
 import { effectiveWeekStreak } from "@/server/services/streak";
+import { reconcilePlan } from "@/server/services/plan-service";
 
 export const dashboardRouter = createTRPCRouter({
   summary: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
     await autoCloseStaleWorkouts(ctx.db, userId);
+    // El plan del panel siempre refleja las «veces por semana» actuales
+    await reconcilePlan(ctx.db, userId);
     const now = new Date();
     const today = startOfDay(now);
 

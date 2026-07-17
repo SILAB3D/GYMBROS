@@ -49,6 +49,9 @@ model User {
   // Tutorial de bienvenida ya completado
   onboardingDone Boolean @default(false)
 
+  // El plan cambió automáticamente y conviene revisar el orden
+  planNeedsReview Boolean @default(false)
+
   routines        Routine[]
   workouts        Workout[]
   attendances     Attendance[]

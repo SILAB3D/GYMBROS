@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowUp, ArrowDown, CircleDot, Wand2 } from "lucide-react";
+import { ArrowUp, ArrowDown, CircleDot, Wand2, Info } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Spinner, EmptyState, Badge } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -56,11 +56,66 @@ export function PlanView() {
     },
     onSettled: invalidate,
   });
+  // Ordenado automático OPTIMISTA: el mismo algoritmo corre en el cliente y
+  // el nuevo orden aparece al instante; el servidor confirma detrás.
   const generate = api.plan.generate.useMutation({
-    onSuccess: () => {
+    onMutate: async () => {
+      await utils.plan.get.cancel();
+      const previous = utils.plan.get.getData();
+      const mine = utils.routine.mine.getData();
+      if (previous && mine) {
+        const remaining = mine
+          .filter((r) => r.inPlan && r.timesPerWeek > 0)
+          .map((r) => ({ r, left: r.timesPerWeek }));
+        const total = remaining.reduce((acc, x) => acc + x.left, 0);
+        const newSlots: typeof previous.slots = [];
+        let prev: string | null = null;
+        for (let i = 0; i < total; i++) {
+          const candidates = remaining.filter((x) => x.left > 0).sort((a, b) => b.left - a.left);
+          const pick = candidates.find((c) => c.r.id !== prev) ?? candidates[0];
+          if (!pick) break;
+          newSlots.push({
+            id: `temp-${i}`,
+            userId: "",
+            order: i,
+            routineId: pick.r.id,
+            routine: {
+              id: pick.r.id,
+              name: pick.r.name,
+              emoji: pick.r.emoji,
+              color: pick.r.color,
+              estimatedMinutes: pick.r.estimatedMinutes,
+              _count: { exercises: pick.r.exercises.length },
+            },
+          } as (typeof previous.slots)[number]);
+          pick.left -= 1;
+          prev = pick.r.id;
+        }
+        utils.plan.get.setData(undefined, {
+          ...previous,
+          slots: newSlots,
+          position: 0,
+          needsReview: false,
+        });
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) utils.plan.get.setData(undefined, context.previous);
+    },
+    onSettled: () => {
       invalidate();
       utils.user.me.invalidate();
     },
+  });
+  const dismissReview = api.plan.dismissReview.useMutation({
+    onMutate: async () => {
+      await utils.plan.get.cancel();
+      const previous = utils.plan.get.getData();
+      if (previous) utils.plan.get.setData(undefined, { ...previous, needsReview: false });
+      return { previous };
+    },
+    onSettled: () => utils.plan.get.invalidate(),
   });
 
   if (isLoading) return <Spinner />;
@@ -80,6 +135,18 @@ export function PlanView() {
           Tus rutinas aparecen según sus «veces por semana»; tú solo las ordenas.
         </p>
       </div>
+
+      {data?.needsReview && slots.length > 0 && (
+        <Card className="flex items-center justify-between gap-3 border-amber-400/40 bg-amber-400/5 py-3">
+          <p className="flex items-center gap-2 text-sm">
+            <Info className="h-4 w-4 shrink-0 text-amber-400" />
+            El plan se actualizó con tus cambios de rutinas; revisa el orden por si quieres ajustarlo.
+          </p>
+          <Button size="sm" variant="ghost" onClick={() => dismissReview.mutate()}>
+            Entendido
+          </Button>
+        </Card>
+      )}
 
       {slots.length === 0 ? (
         <EmptyState

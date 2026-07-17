@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
-import { syncWeeklyTarget } from "@/server/services/weekly-target";
+import { reconcilePlan } from "@/server/services/plan-service";
 
 /**
  * Plan de entrenamiento: secuencia ordenada de rutinas y días de descanso.
@@ -26,70 +26,29 @@ async function getOrderedSlots(db: typeof import("@/lib/db").db, userId: string)
   });
 }
 
-/** Reindexa los slots 0..n-1 para que el orden quede compacto. */
-async function reindex(db: typeof import("@/lib/db").db, userId: string) {
-  const slots = await db.planSlot.findMany({ where: { userId }, orderBy: { order: "asc" } });
-  await Promise.all(
-    slots.map((s, i) => (s.order === i ? null : db.planSlot.update({ where: { id: s.id }, data: { order: i } }))),
-  );
-  return slots.length;
-}
-
 export const planRouter = createTRPCRouter({
   get: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
-    // Migración suave: los antiguos slots de descanso manuales desaparecen
-    await ctx.db.planSlot.deleteMany({ where: { userId, routineId: null } });
-    // Mantener el recuento de días de entreno/descanso siempre al día
-    const weeklyTarget = await syncWeeklyTarget(ctx.db, userId);
-
-    // Reconciliar: cada rutina aparece en el plan exactamente «timesPerWeek» veces.
-    // Los cambios de frecuencia se reflejan al instante; el usuario solo ordena.
-    const routines = await ctx.db.routine.findMany({
-      where: { userId },
-      select: { id: true, timesPerWeek: true, inPlan: true },
-    });
-    const desired = new Map(routines.map((r) => [r.id, r.inPlan ? r.timesPerWeek : 0]));
-    const current = await ctx.db.planSlot.findMany({ where: { userId }, orderBy: { order: "asc" } });
-    const seen = new Map<string, number>();
-    const toDelete: string[] = [];
-    for (const slot of current) {
-      const count = (seen.get(slot.routineId ?? "") ?? 0) + 1;
-      seen.set(slot.routineId ?? "", count);
-      if (count > (desired.get(slot.routineId ?? "") ?? 0)) toDelete.push(slot.id);
-    }
-    const additions: string[] = [];
-    for (const r of routines) {
-      const want = r.inPlan ? r.timesPerWeek : 0;
-      for (let i = seen.get(r.id) ?? 0; i < want; i++) additions.push(r.id);
-    }
-    if (toDelete.length > 0) {
-      await ctx.db.planSlot.deleteMany({ where: { id: { in: toDelete } } });
-    }
-    if (additions.length > 0) {
-      const last = await ctx.db.planSlot.findFirst({ where: { userId }, orderBy: { order: "desc" } });
-      let next = (last?.order ?? -1) + 1;
-      await ctx.db.planSlot.createMany({
-        data: additions.map((routineId) => ({ userId, routineId, order: next++ })),
-      });
-    }
-    // Reindexar SIEMPRE: los borrados en cascada (p. ej. al eliminar una rutina)
-    // dejan huecos en el orden y la posición podría quedar fuera de rango
-    const count = await reindex(ctx.db, userId);
-    const u = await ctx.db.user.findUniqueOrThrow({
-      where: { id: userId },
-      select: { planPosition: true },
-    });
-    if (count > 0 && u.planPosition >= count) {
-      await ctx.db.user.update({ where: { id: userId }, data: { planPosition: 0 } });
-    }
+    // Sincronización: el nº de apariciones de cada rutina = sus «veces por semana»
+    const needsReview = await reconcilePlan(ctx.db, userId);
     const [slots, user] = await Promise.all([
       getOrderedSlots(ctx.db, userId),
       ctx.db.user.findUniqueOrThrow({ where: { id: userId }, select: { planPosition: true } }),
     ]);
+    const weeklyTarget = await ctx.db.user
+      .findUniqueOrThrow({ where: { id: userId }, select: { weeklyTargetDays: true } })
+      .then((u) => u.weeklyTargetDays);
     const position = slots.length > 0 ? user.planPosition % slots.length : 0;
-    return { slots, position, weeklyTarget };
+    return { slots, position, weeklyTarget, needsReview };
   }),
+
+  // El usuario ya revisó el plan tras un cambio automático
+  dismissReview: protectedProcedure.mutation(({ ctx }) =>
+    ctx.db.user.update({
+      where: { id: ctx.session.user.id },
+      data: { planNeedsReview: false },
+    }),
+  ),
 
   /**
    * Genera el orden automáticamente a partir de las «veces por semana»:
@@ -123,7 +82,10 @@ export const planRouter = createTRPCRouter({
         data: order.map((routineId, i) => ({ userId, routineId, order: i })),
       });
     }
-    await ctx.db.user.update({ where: { id: userId }, data: { planPosition: 0 } });
+    await ctx.db.user.update({
+      where: { id: userId },
+      data: { planPosition: 0, planNeedsReview: false },
+    });
     return { slots: order.length };
   }),
 

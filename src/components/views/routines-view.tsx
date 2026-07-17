@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRef, useState } from "react";
-import { Plus, Copy, Share2, Trash2, Download, FileDown, FileUp } from "lucide-react";
+import { Plus, Copy, Share2, Trash2, Download, FileDown, FileUp, Power } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Spinner, EmptyState, Badge, Avatar } from "@/components/ui";
 
@@ -208,13 +208,15 @@ export function RoutinesView() {
               </Link>
               <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
                 <button
-                  title={r.inPlan ? "Incluida en el plan (pulsa para excluirla)" : "Excluida del plan (pulsa para incluirla)"}
+                  title={r.inPlan ? "Deshabilitar: sacarla del plan de entrenamiento" : "Habilitar: incluirla en el plan de entrenamiento"}
                   onClick={() => toggleInPlan.mutate({ id: r.id })}
-                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium transition ${
-                    r.inPlan ? "bg-accent/15 text-accent" : "bg-surface-2 text-muted hover:text-fg"
+                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                    r.inPlan
+                      ? "border-accent/40 bg-accent/15 text-accent hover:bg-accent/25"
+                      : "border-border bg-surface-2 text-muted hover:text-fg"
                   }`}
                 >
-                  {r.inPlan ? "✓ En el plan" : "Fuera del plan"}
+                  <Power className="h-3 w-3" /> {r.inPlan ? "En el plan" : "Fuera del plan"}
                 </button>
                 <Badge>{r.exercises.length} ejercicios</Badge>
                 {r.timesPerWeek > 0 && <Badge>×{r.timesPerWeek}/semana</Badge>}
