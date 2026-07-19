@@ -16,13 +16,13 @@ const STEPS: Array<{ icon: React.ReactNode; title: string; text: string }> = [
   },
   {
     icon: <span className="text-5xl">📋</span>,
-    title: "Crea tus rutinas",
-    text: "Ejercicios, series y repeticiones. Indica cuántas veces por semana harás cada rutina. Tus pesos son siempre privados.",
+    title: "Crea tu primera rutina",
+    text: "Ve a Entrenamiento → Rutinas y pulsa «Nueva rutina»: añade ejercicios con sus series y repeticiones, y elige cuántas veces por semana la harás. Tus pesos son siempre privados.",
   },
   {
     icon: <span className="text-5xl">🗓️</span>,
-    title: "Tu plan se monta solo",
-    text: "Con las veces por semana de cada rutina se genera tu plan; tú solo lo ordenas. El panel te dice siempre qué toca hoy.",
+    title: "Arma tu plan",
+    text: "Tus rutinas aparecen solas en Entrenamiento → Plan según sus veces por semana. Ordénalas con las flechas o pulsa «Ordenar automáticamente», y el panel te dirá qué toca cada día.",
   },
   {
     icon: <span className="text-5xl">🏋️</span>,
@@ -38,6 +38,16 @@ const STEPS: Array<{ icon: React.ReactNode; title: string; text: string }> = [
     icon: <span className="text-5xl">💬</span>,
     title: "Comunidad",
     text: "Chatea con el grupo, mira sus perfiles y rutinas, y activa las notificaciones del dispositivo en Ajustes para no perderte nada.",
+  },
+  {
+    icon: <span className="text-5xl">📲</span>,
+    title: "Añádela a tu pantalla de inicio",
+    text: "iPhone (Safari): botón Compartir → «Añadir a pantalla de inicio». Android (Chrome): menú ⋮ → «Añadir a pantalla de inicio» o «Instalar app». Se abrirá como una app y podrás recibir notificaciones.",
+  },
+  {
+    icon: <span className="text-5xl">🐞</span>,
+    title: "¿Ideas o fallos?",
+    text: "Usa el botón flotante de la esquina inferior derecha para enviar sugerencias o avisar de cualquier error directamente al desarrollador.",
   },
 ];
 

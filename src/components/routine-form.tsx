@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, GripVertical, Search, Globe, Lock } from "lucide-react";
+import { Plus, Trash2, Search, Globe, Lock, ArrowUp, ArrowDown } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Input, Label, Modal } from "@/components/ui";
 import { MUSCLE_LABELS, cn } from "@/lib/utils";
@@ -15,8 +15,8 @@ const EMOJIS = ["💪", "🏋️", "🦵", "🔥", "⚡", "🐻", "🦍", "🚀"
 export type RoutineFormExercise = {
   exerciseId: string;
   name: string;
-  sets: number;
-  reps: number;
+  sets: number | null; // null = casilla vacía (se marca en rojo y no deja guardar)
+  reps: number | null;
   targetWeight: number | null;
   restSeconds: number | null;
   notes: string | null;
@@ -132,6 +132,17 @@ export function RoutineForm({
     setPickerOpen(false);
   }
 
+  function moveExercise(index: number, direction: "up" | "down") {
+    setForm((f) => {
+      const target = direction === "up" ? index - 1 : index + 1;
+      if (target < 0 || target >= f.exercises.length) return f;
+      const exercises = [...f.exercises];
+      const [moved] = exercises.splice(index, 1);
+      exercises.splice(target, 0, moved!);
+      return { ...f, exercises };
+    });
+  }
+
   function updateExercise(index: number, patch: Partial<RoutineFormExercise>) {
     setForm((f) => ({
       ...f,
@@ -149,7 +160,7 @@ export function RoutineForm({
       timesPerWeek: form.timesPerWeek,
       estimatedMinutes: form.estimatedMinutes,
       exercises: form.exercises.map((e) => ({
-        exerciseId: e.exerciseId, sets: e.sets, reps: e.reps,
+        exerciseId: e.exerciseId, sets: e.sets ?? 1, reps: e.reps ?? 1,
         targetWeight: e.targetWeight, restSeconds: e.restSeconds, notes: e.notes,
       })),
     };
@@ -167,6 +178,8 @@ export function RoutineForm({
   const missing: string[] = [];
   if (form.name.trim().length < 2) missing.push("el nombre de la rutina (mínimo 2 caracteres)");
   if (form.exercises.length === 0) missing.push("añadir al menos un ejercicio");
+  if (form.exercises.some((e) => e.sets === null || e.reps === null))
+    missing.push("completar las series y repeticiones marcadas en rojo");
   const mutationError = create.error ?? update.error;
 
   return (
@@ -273,40 +286,54 @@ export function RoutineForm({
       </Card>
 
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Ejercicios ({form.exercises.length})</h2>
-          <Button variant="secondary" size="sm" onClick={() => { setSearch(""); setPickerOpen(true); }}>
-            <Plus className="h-4 w-4" /> Añadir ejercicio
-          </Button>
-        </div>
+        <h2 className="font-semibold">Ejercicios ({form.exercises.length})</h2>
 
         {form.exercises.map((e, i) => (
           <Card key={`${e.exerciseId}-${i}`} className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 font-medium">
-                <GripVertical className="h-4 w-4 text-muted" /> {e.name}
+            <div className="flex items-center justify-between gap-2">
+              <span className="min-w-0 truncate font-medium">{i + 1}. {e.name}</span>
+              <span className="flex shrink-0 items-center gap-1">
+                <Button size="sm" variant="ghost" disabled={i === 0} title="Subir"
+                  onClick={() => moveExercise(i, "up")}>
+                  <ArrowUp className="h-3.5 w-3.5" />
+                </Button>
+                <Button size="sm" variant="ghost" disabled={i === form.exercises.length - 1} title="Bajar"
+                  onClick={() => moveExercise(i, "down")}>
+                  <ArrowDown className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-red-400"
+                  title="Quitar ejercicio"
+                  onClick={() =>
+                    setForm((f) => ({ ...f, exercises: f.exercises.filter((_, j) => j !== i) }))
+                  }
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
               </span>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-red-400"
-                onClick={() =>
-                  setForm((f) => ({ ...f, exercises: f.exercises.filter((_, j) => j !== i) }))
-                }
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div>
                 <Label>Series</Label>
-                <Input type="number" min={1} value={e.sets}
-                  onChange={(ev) => updateExercise(i, { sets: +ev.target.value || 1 })} />
+                <Input
+                  type="number" min={1} value={e.sets ?? ""}
+                  className={cn(e.sets === null && "border-red-500 focus:ring-red-500/60")}
+                  onChange={(ev) =>
+                    updateExercise(i, { sets: ev.target.value === "" ? null : Math.max(1, Math.floor(+ev.target.value) || 1) })
+                  }
+                />
               </div>
               <div>
                 <Label>Reps</Label>
-                <Input type="number" min={1} value={e.reps}
-                  onChange={(ev) => updateExercise(i, { reps: +ev.target.value || 1 })} />
+                <Input
+                  type="number" min={1} value={e.reps ?? ""}
+                  className={cn(e.reps === null && "border-red-500 focus:ring-red-500/60")}
+                  onChange={(ev) =>
+                    updateExercise(i, { reps: ev.target.value === "" ? null : Math.max(1, Math.floor(+ev.target.value) || 1) })
+                  }
+                />
               </div>
               <div>
                 <Label>Peso (kg) — opcional</Label>
@@ -328,6 +355,14 @@ export function RoutineForm({
             />
           </Card>
         ))}
+
+        <Button
+          variant="secondary"
+          className="w-full"
+          onClick={() => { setSearch(""); setPickerOpen(true); }}
+        >
+          <Plus className="h-4 w-4" /> Añadir ejercicio
+        </Button>
       </div>
 
       <div className="space-y-2">
