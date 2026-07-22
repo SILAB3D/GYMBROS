@@ -17,7 +17,21 @@ function getBaseUrl() {
 
 export function TRPCReactProvider(props: { children: React.ReactNode }) {
   const [queryClient] = useState(
-    () => new QueryClient({ defaultOptions: { queries: { staleTime: 60_000, retry: 1, refetchOnWindowFocus: false } } }),
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: 60_000,
+            // Los datos quedan en caché 24 h: la app muestra lo último visto sin conexión
+            cacheTime: 24 * 60 * 60 * 1000,
+            retry: 2,
+            refetchOnWindowFocus: false,
+            refetchOnReconnect: true, // al recuperar cobertura, refresca
+          },
+          // Las mutaciones se pausan sin conexión y se reanudan al volver online
+          mutations: { networkMode: "online", retry: 2 },
+        },
+      }),
   );
   const [trpcClient] = useState(() =>
     api.createClient({

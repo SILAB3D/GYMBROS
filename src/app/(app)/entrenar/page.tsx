@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Check, Plus, Square, Timer } from "lucide-react";
+import { Check, Plus, Square, Timer, Lock, LockOpen } from "lucide-react";
 import { formatDistanceToNowStrict } from "date-fns";
 import { es } from "date-fns/locale";
 import { api } from "@/trpc/react";
-import { Button, Card, Input, Modal, Spinner, EmptyState } from "@/components/ui";
+import { Button, Card, Input, Modal, Spinner, EmptyState, ProgressBar } from "@/components/ui";
 import { WorkoutLauncher } from "@/components/workout-launcher";
 import { RestTimer } from "@/components/rest-timer";
 import { cn, MUSCLE_LABELS } from "@/lib/utils";
@@ -21,6 +21,7 @@ export default function ActiveWorkoutPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [notes, setNotes] = useState("");
   const [result, setResult] = useState<string[] | null>(null);
+  const [locked, setLocked] = useState(false);
 
   const invalidate = () => utils.workout.active.invalidate();
   const updateSet = api.workout.updateSet.useMutation({ onSuccess: invalidate });
@@ -87,9 +88,17 @@ export default function ActiveWorkoutPage() {
     return acc;
   }, {});
 
+  // Progreso del entrenamiento: series completadas sobre el total
+  const totalSets = workout.exercises.reduce((acc, we) => acc + we.sets.length, 0);
+  const doneSets = workout.exercises.reduce(
+    (acc, we) => acc + we.sets.filter((s) => s.completed).length,
+    0,
+  );
+  const pct = totalSets > 0 ? Math.round((doneSets / totalSets) * 100) : 0;
+
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold">
             {workout.routine ? `${workout.routine.emoji} ${workout.routine.name}` : "Entrenamiento libre"}
@@ -99,16 +108,44 @@ export default function ActiveWorkoutPage() {
             Empezado hace {formatDistanceToNowStrict(workout.startedAt, { locale: es })}
           </p>
         </div>
-        <Button variant="secondary" size="sm" title="Añadir ejercicio" onClick={() => setAddOpen(true)}>
-          <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Ejercicio</span>
-        </Button>
+        <div className="flex shrink-0 gap-1.5">
+          <Button
+            variant={locked ? "primary" : "secondary"}
+            size="sm"
+            title={locked ? "Desbloquear edición" : "Bloquear edición (evita cambios accidentales)"}
+            onClick={() => setLocked((v) => !v)}
+          >
+            {locked ? <Lock className="h-4 w-4" /> : <LockOpen className="h-4 w-4" />}
+          </Button>
+          {!locked && (
+            <Button variant="secondary" size="sm" title="Añadir ejercicio" onClick={() => setAddOpen(true)}>
+              <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Ejercicio</span>
+            </Button>
+          )}
+        </div>
       </div>
 
+      {/* Progreso del entrenamiento */}
+      <Card className="space-y-2 py-3">
+        <div className="flex items-center justify-between text-sm">
+          <span className="font-medium">Progreso</span>
+          <span className="text-muted">{doneSets}/{totalSets} series · {pct}%</span>
+        </div>
+        <ProgressBar value={pct} />
+      </Card>
+
       <RestTimer />
-      <p className="text-xs text-muted">
-        Los valores <span className="italic">en gris</span> vienen de tu última sesión; al editarlos o
-        completar la serie pasan a esta.
-      </p>
+
+      {locked ? (
+        <p className="flex items-center gap-1.5 text-xs text-accent">
+          <Lock className="h-3.5 w-3.5" /> Edición bloqueada: solo puedes marcar series completadas.
+        </p>
+      ) : (
+        <p className="text-xs text-muted">
+          Los valores <span className="italic">en gris</span> vienen de tu última sesión; al editarlos o
+          completar la serie pasan a esta.
+        </p>
+      )}
 
       {workout.exercises.map((we) => (
         <Card key={we.id} className="space-y-2">
@@ -122,13 +159,15 @@ export default function ActiveWorkoutPage() {
               <Input
                 type="number" min={0} step="0.5" defaultValue={s.weight || ""}
                 placeholder="0"
-                className={cn(!s.touched && "italic text-muted")}
+                disabled={locked}
+                className={cn(!s.touched && "italic text-muted", locked && "opacity-60")}
                 onBlur={(e) => updateSet.mutate({ setId: s.id, weight: +e.target.value || 0 })}
               />
               <Input
                 type="number" min={0} defaultValue={s.reps || ""}
                 placeholder="0"
-                className={cn(!s.touched && "italic text-muted")}
+                disabled={locked}
+                className={cn(!s.touched && "italic text-muted", locked && "opacity-60")}
                 onBlur={(e) => updateSet.mutate({ setId: s.id, reps: +e.target.value || 0 })}
               />
               <button
@@ -142,9 +181,11 @@ export default function ActiveWorkoutPage() {
               </button>
             </div>
           ))}
-          <Button size="sm" variant="ghost" onClick={() => addSet.mutate({ workoutExerciseId: we.id })}>
-            <Plus className="h-3.5 w-3.5" /> Añadir serie
-          </Button>
+          {!locked && (
+            <Button size="sm" variant="ghost" onClick={() => addSet.mutate({ workoutExerciseId: we.id })}>
+              <Plus className="h-3.5 w-3.5" /> Añadir serie
+            </Button>
+          )}
         </Card>
       ))}
 
@@ -211,4 +252,3 @@ export default function ActiveWorkoutPage() {
     </div>
   );
 }
-

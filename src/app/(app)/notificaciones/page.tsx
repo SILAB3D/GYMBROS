@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatDistanceToNowStrict } from "date-fns";
 import { es } from "date-fns/locale";
-import { CheckCheck } from "lucide-react";
 import { api } from "@/trpc/react";
-import { Button, Card, Spinner, EmptyState } from "@/components/ui";
+import { Card, Spinner, EmptyState } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import type { NotificationType } from "@prisma/client";
 
@@ -23,18 +22,24 @@ export default function NotificationsPage() {
     type: filter === "ALL" ? undefined : filter,
     limit: 50,
   });
-  const markRead = api.notification.markRead.useMutation({
-    onSuccess: () => utils.notification.invalidate(),
-  });
+  const markRead = api.notification.markRead.useMutation();
+  const marked = useRef(false);
+
+  // Entrar en el apartado marca todas como leídas (solo se refresca el contador
+  // del menú; la lista conserva el resaltado de las nuevas durante la visita)
+  useEffect(() => {
+    if (marked.current) return;
+    marked.current = true;
+    markRead.mutate(
+      {},
+      { onSuccess: () => utils.notification.unreadCount.invalidate() },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Notificaciones</h1>
-        <Button variant="secondary" size="sm" onClick={() => markRead.mutate({})}>
-          <CheckCheck className="h-4 w-4" /> Marcar todas leídas
-        </Button>
-      </div>
+      <h1 className="text-2xl font-bold">Notificaciones</h1>
 
       <div className="flex flex-wrap gap-1.5">
         {FILTERS.map((f) => (
@@ -58,11 +63,7 @@ export default function NotificationsPage() {
       ) : (
         <div className="space-y-2">
           {notifications?.map((n) => (
-            <Card
-              key={n.id}
-              className={cn("cursor-pointer py-3 transition", !n.read && "border-accent/30 bg-accent/5")}
-              onClick={() => !n.read && markRead.mutate({ id: n.id })}
-            >
+            <Card key={n.id} className={cn("py-3", !n.read && "border-accent/30 bg-accent/5")}>
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className={cn("text-sm", !n.read && "font-medium")}>{n.title}</p>

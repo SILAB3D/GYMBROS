@@ -45,6 +45,11 @@ const STEPS: Array<{ icon: React.ReactNode; title: string; text: string }> = [
     text: "iPhone (Safari): botón Compartir → «Añadir a pantalla de inicio». Android (Chrome): menú ⋮ → «Añadir a pantalla de inicio» o «Instalar app». Se abrirá como una app y podrás recibir notificaciones.",
   },
   {
+    icon: <span className="text-5xl">📴</span>,
+    title: "Funciona sin conexión",
+    text: "GymBros guarda tus datos en el dispositivo: podrás consultar y registrar entrenos aunque tengas poca o ninguna cobertura. Todo se sincroniza solo al recuperar la conexión.",
+  },
+  {
     icon: <span className="text-5xl">🐞</span>,
     title: "¿Ideas o fallos?",
     text: "Usa el botón flotante de la esquina inferior derecha para enviar sugerencias o avisar de cualquier error directamente al desarrollador.",

@@ -4,6 +4,7 @@ import { Sidebar, BottomNav, MobileHeader } from "@/components/nav";
 import { FeedbackButton } from "@/components/feedback-button";
 import { PollGate } from "@/components/poll-gate";
 import { OnboardingTutorial } from "@/components/onboarding-tutorial";
+import { OfflineManager } from "@/components/offline-manager";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerAuthSession();
@@ -19,6 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <FeedbackButton />
       <PollGate />
       <OnboardingTutorial />
+      <OfflineManager />
       <BottomNav />
     </div>
   );

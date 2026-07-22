@@ -1,4 +1,88 @@
-/* Service worker de GymBros: recibe notificaciones push y abre la app al tocarlas. */
+/* Service worker de GymBros: notificaciones push + modo offline. */
+
+const CACHE = "gymbros-v1";
+const STATIC = "gymbros-static-v1";
+const DATA = "gymbros-data-v1";
+const OFFLINE_URL = "/panel";
+
+// Precarga del núcleo de la app para que arranque sin conexión
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(CACHE).then((c) =>
+      c.addAll(["/", "/panel", "/entrenamiento", "/comunidad", "/manifest.json"]).catch(() => undefined),
+    ),
+  );
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys
+          .filter((k) => ![CACHE, STATIC, DATA].includes(k))
+          .map((k) => caches.delete(k)),
+      ),
+    ),
+  );
+  self.clients.claim();
+});
+
+function isStaticAsset(url) {
+  return url.pathname.startsWith("/_next/static") || /\.(png|jpg|jpeg|svg|webp|ico|woff2?)$/.test(url.pathname);
+}
+
+self.addEventListener("fetch", (event) => {
+  const { request } = event;
+  const url = new URL(request.url);
+  if (request.method !== "GET" || url.origin !== self.location.origin) return; // las mutaciones (POST) las gestiona la app
+
+  // Assets estáticos: cache-first con revalidación en segundo plano
+  if (isStaticAsset(url)) {
+    event.respondWith(
+      caches.open(STATIC).then(async (cache) => {
+        const cached = await cache.match(request);
+        const network = fetch(request).then((res) => {
+          if (res.ok) cache.put(request, res.clone());
+          return res;
+        }).catch(() => cached);
+        return cached || network;
+      }),
+    );
+    return;
+  }
+
+  // Consultas de datos (tRPC usa GET): network-first con caché de respaldo
+  if (url.pathname.startsWith("/api/trpc")) {
+    event.respondWith(
+      caches.open(DATA).then(async (cache) => {
+        try {
+          const res = await fetch(request);
+          if (res.ok) cache.put(request, res.clone());
+          return res;
+        } catch {
+          const cached = await cache.match(request);
+          return cached || new Response(JSON.stringify([]), { headers: { "Content-Type": "application/json" } });
+        }
+      }),
+    );
+    return;
+  }
+
+  // Navegación entre páginas: network-first con caché de respaldo
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request)
+        .then((res) => {
+          caches.open(CACHE).then((c) => c.put(request, res.clone()));
+          return res;
+        })
+        .catch(async () => (await caches.match(request)) || (await caches.match(OFFLINE_URL)) || Response.error()),
+    );
+  }
+});
+
+// ---------- Notificaciones push ----------
 
 self.addEventListener("push", (event) => {
   let data = {};
