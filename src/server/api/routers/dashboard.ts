@@ -8,9 +8,8 @@ import { seasonAt } from "@/server/services/season";
 export const dashboardRouter = createTRPCRouter({
   summary: protectedProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
-    await autoCloseStaleWorkouts(ctx.db, userId);
-    // El plan del panel siempre refleja las «veces por semana» actuales
-    await reconcilePlan(ctx.db, userId);
+    // Ambas comprueban primero con una consulta barata y salen si no hay nada que hacer
+    await Promise.all([autoCloseStaleWorkouts(ctx.db, userId), reconcilePlan(ctx.db, userId)]);
     const now = new Date();
     const today = startOfDay(now);
 

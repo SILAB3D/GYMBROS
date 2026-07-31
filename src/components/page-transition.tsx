@@ -23,7 +23,7 @@ export function PageTransition({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative">
       {!shown && (
-<GymLoader className="flex min-h-[50dvh] items-center justify-center" />
+<GymLoader className="flex min-h-[65dvh] w-full items-center justify-center" />
       )}
       <div
         className="transition-all duration-300 ease-out"

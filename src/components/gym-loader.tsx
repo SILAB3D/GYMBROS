@@ -3,7 +3,7 @@
 /** Cargador de la app: mancuerna que "levanta" mientras se preparan los datos. */
 export function GymLoader({ className }: { className?: string }) {
   return (
-    <div className={className ?? "flex min-h-[40dvh] items-center justify-center"}>
+    <div className={className ?? "flex min-h-[60dvh] w-full items-center justify-center"}>
       <div className="flex flex-col items-center gap-4">
         <div className="relative h-20 w-28">
           <div className="absolute inset-0 animate-pulse rounded-full bg-accent/10 blur-2xl" />

@@ -145,6 +145,7 @@ export async function finishWorkout(
 
 /** Cierra los entrenamientos del usuario que lleven más de 3 horas abiertos. */
 export async function autoCloseStaleWorkouts(db: PrismaClient, userId: string): Promise<number> {
+  // Comprobación barata: la inmensa mayoría de las cargas no tienen nada que cerrar
   const stale = await db.workout.findMany({
     where: { userId, endedAt: null, startedAt: { lt: new Date(Date.now() - MAX_WORKOUT_MS) } },
     select: { id: true },

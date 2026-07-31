@@ -7,10 +7,6 @@ import { syncWeeklyTarget } from "./weekly-target";
  * (pestaña Plan y panel principal) para que nunca se desincronicen.
  */
 export async function reconcilePlan(db: PrismaClient, userId: string): Promise<boolean> {
-  // Los antiguos slots de descanso manuales desaparecen
-  await db.planSlot.deleteMany({ where: { userId, routineId: null } });
-  await syncWeeklyTarget(db, userId);
-
   const routines = await db.routine.findMany({
     where: { userId },
     select: { id: true, timesPerWeek: true, inPlan: true },
@@ -32,6 +28,27 @@ export async function reconcilePlan(db: PrismaClient, userId: string): Promise<b
   }
 
   const changed = toDelete.length > 0 || additions.length > 0;
+
+  // Camino rápido: si el plan ya está sincronizado, no se escribe nada
+  if (!changed) {
+    const restDays = current.some((s) => s.routineId === null);
+    if (!restDays) {
+      const user = await db.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { planPosition: true, planNeedsReview: true, weeklyTargetDays: true },
+      });
+      const target = Math.min(7, routines.reduce((a, r) => a + (r.inPlan ? r.timesPerWeek : 0), 0));
+      const positionOk = current.length === 0 || user.planPosition < current.length;
+      const orderOk = current.every((s, i) => s.order === i);
+      if (user.weeklyTargetDays === target && positionOk && orderOk) {
+        return user.planNeedsReview;
+      }
+    }
+  }
+
+  // Camino completo: hay cambios que aplicar
+  await db.planSlot.deleteMany({ where: { userId, routineId: null } });
+  await syncWeeklyTarget(db, userId);
   if (toDelete.length > 0) {
     await db.planSlot.deleteMany({ where: { id: { in: toDelete } } });
   }
