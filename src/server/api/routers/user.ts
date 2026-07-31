@@ -136,7 +136,7 @@ export const userRouter = createTRPCRouter({
           currentStreak: true, bestStreak: true, lastCompletedWeek: true, createdAt: true,
         },
       });
-      const [attendances, workouts, recentPRs, routines, achievements, points] =
+      const [attendances, workouts, recentPRs, routines, achievements, points, breakdownRaw] =
         await Promise.all([
           ctx.db.attendance.count({ where: { userId: user.id } }),
           ctx.db.workout.count({ where: { userId: user.id, endedAt: { not: null } } }),
@@ -169,6 +169,12 @@ export const userRouter = createTRPCRouter({
             orderBy: { earnedAt: "desc" },
           }),
           ctx.db.pointEvent.aggregate({ where: { userId: user.id }, _sum: { points: true } }),
+          ctx.db.pointEvent.groupBy({
+            by: ["type"],
+            where: { userId: user.id },
+            _sum: { points: true },
+            _count: true,
+          }),
         ]);
       const { lastCompletedWeek, ...publicUser } = user;
       return {
@@ -178,6 +184,7 @@ export const userRouter = createTRPCRouter({
         },
         attendances, workouts, recentPRs, routines, achievements,
         totalPoints: points._sum.points ?? 0,
+        pointsBreakdown: breakdownRaw.map((g) => ({ type: g.type, points: g._sum.points ?? 0, count: g._count })),
       };
     }),
 

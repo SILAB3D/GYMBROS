@@ -8,6 +8,7 @@ import { Flame, Trophy, ChevronLeft, ChevronRight, ChevronDown } from "lucide-re
 import { api } from "@/trpc/react";
 import { Card, Spinner, Avatar, Stat, Badge, Button } from "@/components/ui";
 import { MonthCalendar } from "@/components/month-calendar";
+import { PointsBreakdown } from "@/components/points-breakdown";
 
 export default function PublicProfilePage() {
   const params = useParams<{ id: string }>();
@@ -74,23 +75,12 @@ export default function PublicProfilePage() {
           </p>
         </Card>
 
-        {/* PRs recientes */}
+        {/* Desglose de puntos */}
         <Card>
           <h2 className="mb-3 flex items-center gap-2 font-semibold">
-            <Trophy className="h-4 w-4 text-gold" /> PRs recientes
+            <Trophy className="h-4 w-4 text-gold" /> Puntos
           </h2>
-          {data.recentPRs.length === 0 ? (
-            <p className="text-sm text-muted">Sin récords todavía</p>
-          ) : (
-            <div className="space-y-2">
-              {data.recentPRs.map((pr) => (
-                <div key={pr.id} className="flex justify-between rounded-xl bg-surface-2 p-3 text-sm">
-                  <span>{pr.exercise.name}</span>
-                  <span className="text-muted">{format(pr.date, "d MMM yyyy", { locale: es })}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          <PointsBreakdown items={data.pointsBreakdown} total={data.totalPoints} />
         </Card>
       </div>
 

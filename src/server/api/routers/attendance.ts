@@ -1,13 +1,15 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import {
-  startOfMonth, endOfMonth, startOfYear, startOfISOWeek, endOfISOWeek,
+  startOfMonth, endOfMonth, startOfYear, startOfISOWeek, endOfISOWeek, startOfDay, differenceInMinutes, format,
 } from "date-fns";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
-import { registerAttendance } from "@/server/services/attendance-service";
+import { registerAttendance, recomputeStreak } from "@/server/services/attendance-service";
 import { effectiveWeekStreak } from "@/server/services/streak";
 
+const DEFAULT_ESTIMATED_MIN = 60;
+
 export const attendanceRouter = createTRPCRouter({
-  // Registrar asistencia de hoy (o de una fecha pasada)
   checkIn: protectedProcedure
     .input(
       z.object({
@@ -34,18 +36,77 @@ export const attendanceRouter = createTRPCRouter({
       });
     }),
 
-  // Días del mes para el calendario
+  // Borrar un día entrenado: quita sus puntos de asistencia y recalcula la racha
+  deleteDay: protectedProcedure
+    .input(z.object({ date: z.date() }))
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+      const date = startOfDay(input.date);
+      const attendance = await ctx.db.attendance.findUnique({
+        where: { userId_date: { userId, date } },
+      });
+      if (!attendance) throw new TRPCError({ code: "NOT_FOUND" });
+      await ctx.db.$transaction([
+        ctx.db.attendance.delete({ where: { id: attendance.id } }),
+        // Quitar los puntos de asistencia otorgados ese día
+        ctx.db.pointEvent.deleteMany({
+          where: { userId, type: "ATTENDANCE", meta: { path: ["date"], equals: date.toISOString() } },
+        }),
+      ]);
+      await recomputeStreak(ctx.db, userId);
+      return { ok: true };
+    }),
+
+  // Días del mes del propio usuario, con marca de "entreno corto" (<50% de lo estimado)
   month: protectedProcedure
     .input(z.object({ year: z.number().int(), month: z.number().int().min(0).max(11) }))
     .query(async ({ ctx, input }) => {
-      const start = new Date(input.year, input.month, 1);
-      return ctx.db.attendance.findMany({
-        where: {
-          userId: ctx.session.user.id,
-          date: { gte: startOfMonth(start), lte: endOfMonth(start) },
-        },
+      const userId = ctx.session.user.id;
+      const start = startOfMonth(new Date(input.year, input.month, 1));
+      const end = endOfMonth(start);
+      const [attendances, workouts] = await Promise.all([
+        ctx.db.attendance.findMany({
+          where: { userId, date: { gte: start, lte: end } },
+          orderBy: { date: "asc" },
+        }),
+        ctx.db.workout.findMany({
+          where: { userId, endedAt: { not: null }, startedAt: { gte: start, lte: end } },
+          select: { startedAt: true, endedAt: true, routine: { select: { estimatedMinutes: true } } },
+        }),
+      ]);
+      // Días cuyo entreno duró menos del 50% de la duración estimada
+      const shortDays = new Set<string>();
+      for (const w of workouts) {
+        if (!w.endedAt) continue;
+        const dur = differenceInMinutes(w.endedAt, w.startedAt);
+        const estimated = w.routine?.estimatedMinutes ?? DEFAULT_ESTIMATED_MIN;
+        if (dur < estimated * 0.5) shortDays.add(format(startOfDay(w.startedAt), "yyyy-MM-dd"));
+      }
+      return {
+        attendances,
+        shortDates: attendances
+          .filter((a) => shortDays.has(format(startOfDay(a.date), "yyyy-MM-dd")))
+          .map((a) => a.date),
+      };
+    }),
+
+  // Calendario de la comunidad: quién entrenó cada día del mes
+  communityMonth: protectedProcedure
+    .input(z.object({ year: z.number().int(), month: z.number().int().min(0).max(11) }))
+    .query(async ({ ctx, input }) => {
+      const start = startOfMonth(new Date(input.year, input.month, 1));
+      const attendances = await ctx.db.attendance.findMany({
+        where: { date: { gte: start, lte: endOfMonth(start) } },
+        select: { date: true, user: { select: { id: true, name: true, avatarUrl: true } } },
         orderBy: { date: "asc" },
       });
+      // Agrupar por día
+      const byDay: Record<string, Array<{ id: string; name: string; avatarUrl: string | null }>> = {};
+      for (const a of attendances) {
+        const key = format(startOfDay(a.date), "yyyy-MM-dd");
+        (byDay[key] ??= []).push(a.user);
+      }
+      return byDay;
     }),
 
   stats: protectedProcedure.query(async ({ ctx }) => {
@@ -56,12 +117,8 @@ export const attendanceRouter = createTRPCRouter({
         where: { id: userId },
         select: { currentStreak: true, bestStreak: true, lastCompletedWeek: true, weeklyTargetDays: true },
       }),
-      ctx.db.attendance.count({
-        where: { userId, date: { gte: startOfISOWeek(now), lte: endOfISOWeek(now) } },
-      }),
-      ctx.db.attendance.count({
-        where: { userId, date: { gte: startOfMonth(now), lte: endOfMonth(now) } },
-      }),
+      ctx.db.attendance.count({ where: { userId, date: { gte: startOfISOWeek(now), lte: endOfISOWeek(now) } } }),
+      ctx.db.attendance.count({ where: { userId, date: { gte: startOfMonth(now), lte: endOfMonth(now) } } }),
       ctx.db.attendance.count({ where: { userId, date: { gte: startOfYear(now) } } }),
       ctx.db.attendance.count({ where: { userId } }),
       ctx.db.attendance.findFirst({ where: { userId }, orderBy: { date: "asc" } }),

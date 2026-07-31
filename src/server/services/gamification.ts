@@ -1,5 +1,6 @@
 import type { PrismaClient, PointType, NotificationType, FeedType } from "@prisma/client";
 import { sendPushToUsers } from "./push";
+import { categoryEnabled, usersWithCategory, type NotifyCategory } from "./notify-prefs";
 
 /**
  * Servicio central de gamificación: puntos, notificaciones, feed y logros.
@@ -27,7 +28,10 @@ export async function notify(
   type: NotificationType,
   title: string,
   body?: string,
+  category: NotifyCategory = "system",
 ) {
+  const user = await db.user.findUnique({ where: { id: userId }, select: { notifyPrefs: true } });
+  if (user && !categoryEnabled(user.notifyPrefs, category)) return;
   await db.notification.create({ data: { userId, type, title, body } });
   await sendPushToUsers(db, [userId], { title, body });
 }
@@ -39,16 +43,18 @@ export async function notifyOthers(
   type: NotificationType,
   title: string,
   body?: string,
+  category: NotifyCategory = "system",
 ) {
   const others = await db.user.findMany({
     where: { id: { not: exceptUserId } },
     select: { id: true },
   });
-  if (others.length === 0) return;
+  const recipients = await usersWithCategory(db, others.map((u) => u.id), category);
+  if (recipients.length === 0) return;
   await db.notification.createMany({
-    data: others.map((u) => ({ userId: u.id, type, title, body })),
+    data: recipients.map((id) => ({ userId: id, type, title, body })),
   });
-  await sendPushToUsers(db, others.map((u) => u.id), { title, body });
+  await sendPushToUsers(db, recipients, { title, body });
 }
 
 export async function addFeed(
@@ -80,7 +86,12 @@ export async function checkAchievements(db: PrismaClient, userId: string) {
     db.workout.count({ where: { userId, endedAt: { not: null } } }),
     db.personalRecord.count({ where: { userId } }),
     db.attendance.count({ where: { userId } }),
-    db.routine.count({ where: { userId, isShared: true } }),
+    // Solo cuenta si la rutina compartida es la primera que creó el usuario
+    db.routine.findFirst({
+      where: { userId },
+      orderBy: { createdAt: "asc" },
+      select: { isShared: true },
+    }),
     db.user.findUnique({ where: { id: userId }, select: { currentStreak: true, bestStreak: true } }),
     db.workout.aggregate({ where: { userId }, _sum: { totalVolume: true } }),
   ]);
@@ -88,7 +99,7 @@ export async function checkAchievements(db: PrismaClient, userId: string) {
 
   if (attendances >= 1) await grant(db, userId, "FIRST_ATTENDANCE");
   if (attendances >= 25) await grant(db, userId, "ATTENDANCE_25");
-  if (sharedRoutines >= 1) await grant(db, userId, "SHARE_FIRST");
+  if (sharedRoutines?.isShared) await grant(db, userId, "SHARE_FIRST");
   if ((user?.bestStreak ?? 0) >= 1) await grant(db, userId, "STREAK_WEEK");
   if ((user?.bestStreak ?? 0) >= 5) await grant(db, userId, "STREAK_CRACK");
   if (workouts >= 1) await grant(db, userId, "FIRST_WORKOUT");

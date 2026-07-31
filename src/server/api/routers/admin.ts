@@ -56,6 +56,62 @@ export const adminRouter = createTRPCRouter({
     ctx.db.feedItem.delete({ where: { id: input.id } }),
   ),
 
+  // Plantillas de notificación (disparadores fijos, contenido editable)
+  notificationTemplates: adminProcedure.query(({ ctx }) =>
+    ctx.db.notificationTemplate.findMany({ orderBy: { code: "asc" } }),
+  ),
+
+  updateTemplate: adminProcedure
+    .input(
+      z.object({
+        code: z.string(),
+        title: z.string().min(2).max(160).optional(),
+        body: z.string().max(400).nullable().optional(),
+        enabled: z.boolean().optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) => {
+      const { code, ...data } = input;
+      return ctx.db.notificationTemplate.update({ where: { code }, data });
+    }),
+
+  // Notificación de prueba: se envía solo al admin que la lanza
+  testNotification: adminProcedure
+    .input(
+      z.object({
+        code: z.string().optional(), // plantilla concreta
+        title: z.string().max(160).optional(),
+        body: z.string().max(400).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+      let title = input.title ?? "Notificación de prueba 🔔";
+      let body = input.body ?? "Si ves esto, las notificaciones funcionan correctamente.";
+      if (input.code) {
+        const t = await ctx.db.notificationTemplate.findUnique({ where: { code: input.code } });
+        if (t) {
+          // Rellena los comodines con datos de ejemplo
+          const vars: Record<string, string> = {
+            name: ctx.session.user.name ?? "Alguien",
+            count: "2 nuevos",
+            exercises: "Press banca, Sentadilla",
+            routine: "💪 Push",
+            days: "3",
+            target: "4",
+          };
+          const fill = (s: string) => s.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
+          title = `[PRUEBA] ${fill(t.title)}`;
+          body = t.body ? fill(t.body) : "";
+        }
+      }
+      // Se salta las preferencias: es una prueba explícita del admin
+      await ctx.db.notification.create({ data: { userId, type: "SYSTEM", title, body } });
+      const { sendPushToUsers } = await import("@/server/services/push");
+      await sendPushToUsers(ctx.db, [userId], { title, body });
+      return { ok: true };
+    }),
+
   broadcast: adminProcedure
     .input(z.object({ title: z.string().min(1).max(120), body: z.string().max(500).optional() }))
     .mutation(async ({ ctx, input }) => {

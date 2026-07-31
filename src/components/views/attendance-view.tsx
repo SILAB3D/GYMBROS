@@ -12,62 +12,16 @@ export function AttendanceView() {
   const utils = api.useUtils();
   const [cursor, setCursor] = useState(new Date());
   const { data: stats, isLoading } = api.attendance.stats.useQuery();
-  const { data: monthDays } = api.attendance.month.useQuery({
-    year: cursor.getFullYear(),
-    month: cursor.getMonth(),
-  });
-  // Check-in optimista: el día se marca en el calendario y suben los contadores al instante
-  const checkIn = api.attendance.checkIn.useMutation({
-    onMutate: async () => {
-      const today = new Date();
-      const monthInput = { year: cursor.getFullYear(), month: cursor.getMonth() };
-      const viewingThisMonth =
-        cursor.getFullYear() === today.getFullYear() && cursor.getMonth() === today.getMonth();
+  const monthInput = { year: cursor.getFullYear(), month: cursor.getMonth() };
+  const { data: monthData } = api.attendance.month.useQuery(monthInput);
 
-      await Promise.all([utils.attendance.month.cancel(monthInput), utils.attendance.stats.cancel()]);
-      const prevMonth = utils.attendance.month.getData(monthInput);
-      const prevStats = utils.attendance.stats.getData();
-
-      // Si hoy ya está registrado, no tocamos nada (evita contar dos veces)
-      const alreadyToday = (prevMonth ?? []).some(
-        (a) => new Date(a.date).toDateString() === today.toDateString(),
-      );
-      if (alreadyToday) return { prevMonth: undefined, prevStats: undefined, monthInput };
-
-      if (viewingThisMonth && prevMonth) {
-        utils.attendance.month.setData(monthInput, [
-          ...prevMonth,
-          {
-            id: `temp-${Date.now()}`,
-            userId: "",
-            date: today,
-            checkIn: today,
-            checkOut: null,
-            gymName: null,
-            notes: null,
-          },
-        ]);
-      }
-      if (prevStats) {
-        utils.attendance.stats.setData(undefined, {
-          ...prevStats,
-          thisWeek: prevStats.thisWeek + 1,
-          thisMonth: prevStats.thisMonth + 1,
-          thisYear: prevStats.thisYear + 1,
-          total: prevStats.total + 1,
-        });
-      }
-      return { prevMonth, prevStats, monthInput };
-    },
-    onError: (_err, _vars, context) => {
-      if (!context) return;
-      if (context.prevMonth) utils.attendance.month.setData(context.monthInput, context.prevMonth);
-      if (context.prevStats) utils.attendance.stats.setData(undefined, context.prevStats);
-    },
-    onSettled: () => utils.attendance.invalidate(),
-  });
+  const checkIn = api.attendance.checkIn.useMutation({ onSuccess: () => utils.attendance.invalidate() });
+  const deleteDay = api.attendance.deleteDay.useMutation({ onSuccess: () => utils.attendance.invalidate() });
 
   if (isLoading || !stats) return <Spinner />;
+
+  const attendances = monthData?.attendances ?? [];
+  const shortDates = monthData?.shortDates ?? [];
 
   return (
     <div className="space-y-6">
@@ -81,11 +35,7 @@ export function AttendanceView() {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat
           label="Racha semanal"
-          value={
-            <span className="flex items-center gap-1">
-              {stats.currentStreak} <Flame className="h-5 w-5 text-orange-400" />
-            </span>
-          }
+          value={<span className="flex items-center gap-1">{stats.currentStreak} <Flame className="h-5 w-5 text-orange-400" /></span>}
           sub={`Mejor: ${stats.bestStreak} semanas`}
         />
         <Stat
@@ -111,11 +61,22 @@ export function AttendanceView() {
         <MonthCalendar
           year={cursor.getFullYear()}
           month={cursor.getMonth()}
-          trainedDates={(monthDays ?? []).map((a) => a.date)}
+          trainedDates={attendances.map((a) => a.date)}
+          shortDates={shortDates}
+          onDayClick={(date) => {
+            if (confirm(`¿Borrar el día entrenado del ${format(date, "d 'de' MMMM", { locale: es })}? Se recalcularán tus puntos y tu racha.`)) {
+              deleteDay.mutate({ date });
+            }
+          }}
         />
-        <p className="mt-3 text-center text-sm text-muted">
-          {monthDays?.length ?? 0} asistencias este mes
-        </p>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+          <span>{attendances.length} asistencias este mes</span>
+          <span className="flex items-center gap-3">
+            <span className="flex items-center gap-1"><span className="h-3 w-3 rounded bg-accent" /> normal</span>
+            <span className="flex items-center gap-1"><span className="h-3 w-3 rounded border-2 border-amber-400 bg-amber-400/20" /> corto</span>
+          </span>
+        </div>
+        <p className="mt-1 text-center text-[11px] text-muted">Pulsa un día entrenado para borrarlo.</p>
       </Card>
     </div>
   );

@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
 import { signOut } from "next-auth/react";
-import { LogOut, Camera, Wallet, BellRing, Eye, GraduationCap } from "lucide-react";
+import {
+  LogOut, Camera, Wallet, Eye, GraduationCap, User, Bell, ShieldAlert,
+  KeyRound, ChevronDown,
+} from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Input, Label, Spinner, Avatar } from "@/components/ui";
 import { AdminView } from "@/components/views/admin-view";
@@ -11,7 +14,14 @@ import { PushSettings } from "@/components/push-settings";
 import { useViewAsUser } from "@/lib/use-view-as-user";
 import { useTutorialLaunch } from "@/lib/use-tutorial-launch";
 
-/** Recorta al centro y redimensiona la imagen a 192×192 px en el navegador. */
+const NOTIFY_CATEGORIES: Array<{ key: string; label: string }> = [
+  { key: "prs", label: "PRs del grupo" },
+  { key: "workouts", label: "Entrenos del grupo" },
+  { key: "streaks", label: "Rachas y semanas" },
+  { key: "reminders", label: "Recordatorios de entreno" },
+  { key: "system", label: "Sistema, encuestas y logros" },
+];
+
 function resizeImage(file: File, size = 192): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -31,16 +41,24 @@ function resizeImage(file: File, size = 192): Promise<string> {
   });
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
+/** Sección plegable, cerrada por defecto. */
+function Section({ icon, title, children, defaultOpen = false }: {
+  icon: React.ReactNode; title: string; children: React.ReactNode; defaultOpen?: boolean;
+}) {
   return (
-    <h2 className="px-1 text-xs font-semibold uppercase tracking-wider text-muted">{children}</h2>
+    <details open={defaultOpen} className="group rounded-2xl border border-border bg-surface">
+      <summary className="flex cursor-pointer list-none items-center justify-between p-4 [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center gap-2 font-semibold">{icon} {title}</span>
+        <ChevronDown className="h-4 w-4 text-muted transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="space-y-4 border-t border-border p-4">{children}</div>
+    </details>
   );
 }
 
-function Toggle({ on, onClick, title }: { on: boolean; onClick: () => void; title: string }) {
+function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
   return (
     <button
-      title={title}
       onClick={onClick}
       className={`h-6 w-11 shrink-0 rounded-full p-0.5 transition ${on ? "bg-accent" : "bg-border"}`}
     >
@@ -70,240 +88,157 @@ export default function SettingsPage() {
   }, [me]);
 
   const update = api.user.updateProfile.useMutation({
-    onSuccess: () => {
-      utils.user.me.invalidate();
-      setMessage("Guardado ✅");
-    },
+    onSuccess: () => { utils.user.me.invalidate(); setMessage("Guardado ✅"); },
   });
   const changePassword = api.user.changePassword.useMutation({
-    onSuccess: () => {
-      setPasswords({ current: "", next: "" });
-      setMessage("Contraseña cambiada ✅");
-    },
+    onSuccess: () => { setPasswords({ current: "", next: "" }); setMessage("Contraseña cambiada ✅"); },
     onError: (e) => setMessage(e.message),
   });
   const resetData = api.user.resetData.useMutation({
-    onSuccess: () => {
-      utils.invalidate();
-      setMessage("Perfil reseteado: todos tus registros han sido eliminados ✅");
-    },
+    onSuccess: () => { utils.invalidate(); setMessage("Perfil reseteado ✅"); },
     onError: (e) => setMessage(e.message),
   });
 
   if (isLoading || !me) return <Spinner />;
 
   const prefs = (me.notifyPrefs ?? {}) as Record<string, boolean>;
-  const remindersOn = prefs.reminders !== false;
 
   return (
     <div className="space-y-8">
-      <div className="max-w-lg space-y-8">
+      <div className="max-w-lg space-y-3">
         <h1 className="text-2xl font-bold">Ajustes</h1>
 
-        {/* ---------- Perfil ---------- */}
-        <section className="space-y-3">
-          <SectionTitle>Perfil</SectionTitle>
-          <Card className="space-y-4">
-            <div className="flex items-center gap-4">
-              <Avatar name={form.name || me.name} src={form.avatarUrl || null} size={64} />
-              <div className="flex-1 space-y-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    try {
-                      const dataUrl = await resizeImage(file);
-                      setForm((f) => ({ ...f, avatarUrl: dataUrl }));
-                    } catch {
-                      setMessage("No se pudo procesar la imagen");
-                    }
-                    e.target.value = "";
-                  }}
-                />
-                <div className="flex items-center gap-2">
-                  <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()}>
-                    <Camera className="h-4 w-4" /> Subir foto
+        {/* Perfil */}
+        <Section icon={<User className="h-4 w-4" />} title="Perfil">
+          <div className="flex items-center gap-4">
+            <Avatar name={form.name || me.name} src={form.avatarUrl || null} size={64} />
+            <div className="flex-1 space-y-2">
+              <input
+                ref={fileInputRef} type="file" accept="image/*" className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  try { const url = await resizeImage(file); setForm((f) => ({ ...f, avatarUrl: url })); }
+                  catch { setMessage("No se pudo procesar la imagen"); }
+                  e.target.value = "";
+                }}
+              />
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()}>
+                  <Camera className="h-4 w-4" /> Subir foto
+                </Button>
+                {form.avatarUrl && (
+                  <Button variant="ghost" size="sm" className="text-red-400" onClick={() => setForm((f) => ({ ...f, avatarUrl: "" }))}>
+                    Quitar
                   </Button>
-                  {form.avatarUrl && (
-                    <Button
-                      variant="ghost" size="sm" className="text-red-400"
-                      onClick={() => setForm((f) => ({ ...f, avatarUrl: "" }))}
-                    >
-                      Quitar
-                    </Button>
-                  )}
-                </div>
-                <p className="text-xs text-muted">Se recorta y reduce automáticamente.</p>
+                )}
               </div>
             </div>
-            <div>
-              <Label>Nombre</Label>
-              <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Fecha de inicio en el gimnasio</Label>
-              <Input
-                type="date"
-                value={form.gymStartDate}
-                onChange={(e) => setForm((f) => ({ ...f, gymStartDate: e.target.value }))}
-              />
-            </div>
-            <Button
-              loading={update.isLoading}
-              onClick={() =>
-                update.mutate({
-                  name: form.name,
-                  avatarUrl: form.avatarUrl || null,
-                  gymStartDate: form.gymStartDate ? new Date(form.gymStartDate) : null,
-                })
-              }
-            >
-              Guardar cambios
-            </Button>
-          </Card>
-        </section>
+          </div>
+          <div>
+            <Label>Nombre</Label>
+            <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+          </div>
+          <div>
+            <Label>Fecha de inicio en el gimnasio</Label>
+            <Input type="date" value={form.gymStartDate} onChange={(e) => setForm((f) => ({ ...f, gymStartDate: e.target.value }))} />
+          </div>
+          <Button
+            loading={update.isLoading}
+            onClick={() => update.mutate({
+              name: form.name,
+              avatarUrl: form.avatarUrl || null,
+              gymStartDate: form.gymStartDate ? new Date(form.gymStartDate) : null,
+            })}
+          >
+            Guardar cambios
+          </Button>
+        </Section>
 
-        {/* ---------- Preferencias ---------- */}
-        <section className="space-y-3">
-          <SectionTitle>Preferencias</SectionTitle>
+        {/* Notificaciones */}
+        <Section icon={<Bell className="h-4 w-4" />} title="Notificaciones">
           <PushSettings />
-          <Card className="flex items-center justify-between gap-4">
-            <div className="space-y-1">
-              <h2 className="flex items-center gap-2 font-semibold">
-                <BellRing className="h-4 w-4" /> Recordatorios de entreno
-              </h2>
-              <p className="text-sm text-muted">
-                «Te queda 1 día para cumplir tu semana», «llevas 3 días sin entrenar»…
-              </p>
-            </div>
-            <Toggle
-              on={remindersOn}
-              title={remindersOn ? "Desactivar" : "Activar"}
-              onClick={() => update.mutate({ notifyPrefs: { ...prefs, reminders: !remindersOn } })}
-            />
-          </Card>
-          <Card className="flex items-center justify-between gap-4">
-            <div className="space-y-1">
-              <h2 className="flex items-center gap-2 font-semibold">
-                <GraduationCap className="h-4 w-4" /> Tutorial de bienvenida
-              </h2>
-              <p className="text-sm text-muted">Repasa el recorrido inicial de la app.</p>
-            </div>
-            <Button variant="secondary" size="sm" onClick={() => setTutorial(true)}>
-              Ver tutorial
-            </Button>
-          </Card>
-          <Card className="flex items-center justify-between gap-4">
-            <div className="space-y-1">
-              <h2 className="flex items-center gap-2 font-semibold">
-                <Wallet className="h-4 w-4" /> Apartado de inversión
-              </h2>
-              <p className="text-sm text-muted">Muestra u oculta la sección de coste en el menú.</p>
-            </div>
-            <Toggle
-              on={me.investmentEnabled}
-              title={me.investmentEnabled ? "Desactivar" : "Activar"}
-              onClick={() => update.mutate({ investmentEnabled: !me.investmentEnabled })}
-            />
-          </Card>
-        </section>
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Categorías (todas activas por defecto)</p>
+            {NOTIFY_CATEGORIES.map((c) => {
+              const on = prefs[c.key] !== false;
+              return (
+                <div key={c.key} className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-muted">{c.label}</span>
+                  <Toggle on={on} onClick={() => update.mutate({ notifyPrefs: { ...prefs, [c.key]: !on } })} />
+                </div>
+              );
+            })}
+          </div>
+        </Section>
 
-        {/* ---------- Cuenta ---------- */}
-        <section className="space-y-3">
-          <SectionTitle>Cuenta</SectionTitle>
-          <Card className="space-y-4">
-            <h2 className="font-semibold">Cambiar contraseña</h2>
-            <div>
-              <Label>Contraseña actual</Label>
-              <Input
-                type="password" autoComplete="current-password"
-                value={passwords.current}
-                onChange={(e) => setPasswords((p) => ({ ...p, current: e.target.value }))}
-              />
-            </div>
-            <div>
-              <Label>Nueva contraseña (mínimo 8 caracteres)</Label>
-              <Input
-                type="password" autoComplete="new-password"
-                value={passwords.next}
-                onChange={(e) => setPasswords((p) => ({ ...p, next: e.target.value }))}
-              />
-            </div>
-            <Button
-              variant="secondary"
-              disabled={!passwords.current || passwords.next.length < 8}
-              loading={changePassword.isLoading}
-              onClick={() => changePassword.mutate(passwords)}
-            >
-              Cambiar contraseña
-            </Button>
-          </Card>
-          <Card className="flex items-center justify-between gap-4">
-            <div className="space-y-1">
-              <h2 className="font-semibold">Sesión</h2>
-              <p className="text-sm text-muted">Permanece abierta hasta que la cierres aquí.</p>
-            </div>
+        {/* Inversión */}
+        <Section icon={<Wallet className="h-4 w-4" />} title="Apartado de inversión">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm text-muted">Muestra u oculta la sección de coste en el menú.</span>
+            <Toggle on={me.investmentEnabled} onClick={() => update.mutate({ investmentEnabled: !me.investmentEnabled })} />
+          </div>
+        </Section>
+
+        {/* Cuenta */}
+        <Section icon={<KeyRound className="h-4 w-4" />} title="Cuenta">
+          <div>
+            <Label>Contraseña actual</Label>
+            <Input type="password" autoComplete="current-password" value={passwords.current}
+              onChange={(e) => setPasswords((p) => ({ ...p, current: e.target.value }))} />
+          </div>
+          <div>
+            <Label>Nueva contraseña (mínimo 8 caracteres)</Label>
+            <Input type="password" autoComplete="new-password" value={passwords.next}
+              onChange={(e) => setPasswords((p) => ({ ...p, next: e.target.value }))} />
+          </div>
+          <Button variant="secondary" disabled={!passwords.current || passwords.next.length < 8}
+            loading={changePassword.isLoading} onClick={() => changePassword.mutate(passwords)}>
+            Cambiar contraseña
+          </Button>
+          <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
+            <span className="text-sm text-muted">Cerrar sesión en este dispositivo</span>
             <Button variant="secondary" onClick={() => signOut({ callbackUrl: "/login" })}>
               <LogOut className="h-4 w-4" /> Cerrar sesión
             </Button>
-          </Card>
-          <p className="px-1 text-xs text-muted">
-            Cuenta creada el {format(me.createdAt, "dd/MM/yyyy")} · {me.email}
-          </p>
-        </section>
+          </div>
+          <p className="text-xs text-muted">Cuenta creada el {format(me.createdAt, "dd/MM/yyyy")} · {me.email}</p>
+        </Section>
 
-        {/* ---------- Zona peligrosa ---------- */}
-        <section className="space-y-3">
-          <SectionTitle>Zona peligrosa</SectionTitle>
-          <Card className="space-y-3 border-red-500/30">
-            <p className="text-sm text-muted">
-              Resetear el perfil elimina <strong>todos</strong> tus registros: entrenamientos,
-              asistencias, rachas, PRs, puntos, notificaciones y logros. Se conservan tu cuenta y
-              tus rutinas. No se puede deshacer.
-            </p>
-            <Button
-              variant="danger"
-              loading={resetData.isLoading}
-              onClick={() => {
-                const answer = prompt(
-                  'Vas a borrar todos tus registros de forma permanente.\n\nEscribe RESET para confirmar:',
-                );
-                if (answer === "RESET") resetData.mutate({ confirmation: "RESET" });
-                else if (answer !== null) setMessage("Reset cancelado: el texto no coincide");
-              }}
-            >
-              Resetear mi perfil
-            </Button>
-          </Card>
-        </section>
+        {/* Ayuda */}
+        <Section icon={<GraduationCap className="h-4 w-4" />} title="Ayuda">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm text-muted">Repasa el tutorial de bienvenida.</span>
+            <Button variant="secondary" size="sm" onClick={() => setTutorial(true)}>Ver tutorial</Button>
+          </div>
+        </Section>
+
+        {/* Administración: ver como usuario */}
+        {me.role === "ADMIN" && (
+          <Section icon={<Eye className="h-4 w-4" />} title="Vista de administrador">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-muted">Ver la app como un usuario estándar (oculta la administración).</span>
+              <Toggle on={viewAsUser} onClick={() => setViewAsUser(!viewAsUser)} />
+            </div>
+          </Section>
+        )}
+
+        {/* Zona peligrosa */}
+        <Section icon={<ShieldAlert className="h-4 w-4 text-red-400" />} title="Zona peligrosa">
+          <p className="text-sm text-muted">
+            Resetear el perfil elimina <strong>todos</strong> tus registros. Se conservan tu cuenta y tus rutinas. No se puede deshacer.
+          </p>
+          <Button variant="danger" loading={resetData.isLoading}
+            onClick={() => {
+              const a = prompt('Escribe RESET para borrar todos tus registros de forma permanente:');
+              if (a === "RESET") resetData.mutate({ confirmation: "RESET" });
+              else if (a !== null) setMessage("Reset cancelado");
+            }}>
+            Resetear mi perfil
+          </Button>
+        </Section>
 
         {message && <p className="px-1 text-sm text-accent">{message}</p>}
-
-        {/* ---------- Administración ---------- */}
-        {me.role === "ADMIN" && (
-          <section className="space-y-3">
-            <SectionTitle>Administración</SectionTitle>
-            <Card className="flex items-center justify-between gap-4">
-              <div className="space-y-1">
-                <h2 className="flex items-center gap-2 font-semibold">
-                  <Eye className="h-4 w-4" /> Ver como usuario estándar
-                </h2>
-                <p className="text-sm text-muted">
-                  Oculta la administración para ver la app como el resto del grupo.
-                </p>
-              </div>
-              <Toggle
-                on={viewAsUser}
-                title={viewAsUser ? "Volver a la vista de admin" : "Activar vista de usuario"}
-                onClick={() => setViewAsUser(!viewAsUser)}
-              />
-            </Card>
-          </section>
-        )}
       </div>
 
       {me.role === "ADMIN" && !viewAsUser && (

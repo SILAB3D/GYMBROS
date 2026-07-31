@@ -5,18 +5,23 @@ import { isSameDay, startOfMonth, getDay, getDaysInMonth, isAfter, startOfDay } 
 import { cn } from "@/lib/utils";
 
 /**
- * Calendario mensual: días entrenados en verde, días pasados sin entrenar
- * apagados, hoy con borde.
+ * Calendario mensual. Días entrenados en verde; entrenos "cortos" (menos del
+ * 50% de lo estimado) con un patrón distinto (borde ámbar). Opcionalmente,
+ * cada día entrenado es pulsable (para borrarlo).
  */
 export function MonthCalendar({
   year,
   month,
   trainedDates,
+  shortDates = [],
+  onDayClick,
   className,
 }: {
   year: number;
   month: number; // 0-11
   trainedDates: Date[];
+  shortDates?: Date[];
+  onDayClick?: (date: Date) => void;
   className?: string;
 }) {
   const today = startOfDay(new Date());
@@ -41,21 +46,29 @@ export function MonthCalendar({
         {cells.map((date, i) => {
           if (!date) return <div key={`e${i}`} />;
           const trained = trainedDates.some((t) => isSameDay(t, date));
+          const short = trained && shortDates.some((t) => isSameDay(t, date));
           const isToday = isSameDay(date, today);
           const isFuture = isAfter(date, today);
+          const clickable = trained && !!onDayClick;
           return (
-            <div
+            <button
               key={date.toISOString()}
+              type="button"
+              disabled={!clickable}
+              onClick={() => clickable && onDayClick?.(date)}
+              title={short ? "Entreno corto (menos de la mitad de lo estimado)" : trained ? "Día entrenado" : undefined}
               className={cn(
-                "flex aspect-square items-center justify-center rounded-lg text-xs",
-                trained && "bg-accent font-bold text-accent-fg",
+                "flex aspect-square items-center justify-center rounded-lg text-xs transition",
+                trained && !short && "bg-accent font-bold text-accent-fg",
+                short && "border-2 border-amber-400 bg-amber-400/20 font-bold text-amber-300",
                 !trained && !isFuture && "bg-surface-2 text-muted",
                 isFuture && "text-muted/40",
                 isToday && "ring-2 ring-accent",
+                clickable && "cursor-pointer hover:opacity-80",
               )}
             >
               {date.getDate()}
-            </div>
+            </button>
           );
         })}
       </div>

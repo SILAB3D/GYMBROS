@@ -2,16 +2,18 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Trophy, Users, MessageCircle } from "lucide-react";
+import { Trophy, Users, MessageCircle, CalendarDays } from "lucide-react";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
 import { RankingView } from "@/components/views/ranking-view";
 import { GroupView } from "@/components/views/group-view";
 import { ChatView } from "@/components/views/chat-view";
+import { CommunityCalendarView } from "@/components/views/community-calendar-view";
 
 const TABS = [
   { key: "ranking", label: "Ranking", icon: Trophy },
   { key: "grupo", label: "Grupo", icon: Users },
+  { key: "calendario", label: "Calendario", icon: CalendarDays },
   { key: "chat", label: "Chat", icon: MessageCircle },
 ] as const;
 
@@ -35,7 +37,7 @@ function CommunityContent() {
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-1 rounded-2xl bg-surface p-1">
+      <div className="mx-auto flex w-full max-w-md gap-1 rounded-2xl bg-surface p-1">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
@@ -53,6 +55,7 @@ function CommunityContent() {
 
       {visited.has("ranking") && <div className={tab === "ranking" ? "" : "hidden"}><RankingView /></div>}
       {visited.has("grupo") && <div className={tab === "grupo" ? "" : "hidden"}><GroupView /></div>}
+      {visited.has("calendario") && <div className={tab === "calendario" ? "" : "hidden"}><CommunityCalendarView /></div>}
       {/* El chat se monta solo cuando está activo (su sondeo marca mensajes como leídos) */}
       {tab === "chat" && <ChatView />}
     </div>

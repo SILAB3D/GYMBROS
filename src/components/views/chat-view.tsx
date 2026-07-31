@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { format } from "date-fns";
@@ -113,7 +114,11 @@ export function ChatView() {
           const mine = m.user.id === myId;
           return (
             <div key={m.id} className={cn("group flex items-end gap-2", mine && "flex-row-reverse")}>
-              {!mine && <Avatar name={m.user.name} src={avatarOf(m.user.id)} size={28} />}
+              {!mine && (
+                <Link href={`/perfil/${m.user.id}`} className="shrink-0 transition hover:opacity-80">
+                  <Avatar name={m.user.name} src={avatarOf(m.user.id)} size={28} />
+                </Link>
+              )}
               <div className={cn("max-w-[75%]", mine && "flex flex-col items-end")}>
                 <button
                   type="button"

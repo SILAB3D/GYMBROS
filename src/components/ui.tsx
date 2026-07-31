@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
+import { GymLoader } from "@/components/gym-loader";
 import { forwardRef } from "react";
 
 // ---------- Button ----------
@@ -149,11 +150,7 @@ export function ProgressBar({ value, className }: { value: number; className?: s
 // ---------- Estados ----------
 
 export function Spinner({ className }: { className?: string }) {
-  return (
-    <div className={cn("flex justify-center py-12", className)}>
-      <Loader2 className="h-6 w-6 animate-spin text-muted" />
-    </div>
-  );
+  return <GymLoader className={cn("flex justify-center py-10", className)} />;
 }
 
 export function EmptyState({

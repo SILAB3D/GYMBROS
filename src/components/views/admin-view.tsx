@@ -2,11 +2,25 @@
 
 import { useState } from "react";
 import { format } from "date-fns";
-import { Shield, Trash2, Megaphone, MessageSquare, Check, Undo2, BarChart3, Eye, Plus, Lock, LockOpen } from "lucide-react";
+import { Shield, Trash2, Megaphone, MessageSquare, Check, Undo2, BarChart3, Eye, Plus, Lock, LockOpen, MailPlus, ChevronDown, Send, Users } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Input, Label, Spinner, Badge, Modal } from "@/components/ui";
 import { PollAnswerCard } from "@/components/poll-card";
 import { cn } from "@/lib/utils";
+
+
+/** Sección plegable del panel de administración (cerrada por defecto). */
+function AdminSection({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+  return (
+    <details className="group rounded-2xl border border-border bg-surface">
+      <summary className="flex cursor-pointer list-none items-center justify-between p-4 [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center gap-2 font-semibold">{icon} {title}</span>
+        <ChevronDown className="h-4 w-4 text-muted transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="space-y-4 border-t border-border p-4">{children}</div>
+    </details>
+  );
+}
 
 export function AdminView() {
   const utils = api.useUtils();
@@ -42,6 +56,17 @@ export function AdminView() {
   });
   const setPollClosed = api.poll.setClosed.useMutation({ onSuccess: () => utils.poll.invalidate() });
   const deletePoll = api.poll.delete.useMutation({ onSuccess: () => utils.poll.invalidate() });
+  const { data: templates } = api.admin.notificationTemplates.useQuery();
+  const [testSent, setTestSent] = useState<string | null>(null);
+  const testNotification = api.admin.testNotification.useMutation({
+    onSuccess: (_d, vars) => {
+      setTestSent(vars.code ?? "generic");
+      setTimeout(() => setTestSent(null), 2500);
+    },
+  });
+  const updateTemplate = api.admin.updateTemplate.useMutation({
+    onSuccess: () => utils.admin.notificationTemplates.invalidate(),
+  });
   const sendBroadcast = api.admin.broadcast.useMutation({
     onSuccess: () => {
       setBroadcast({ title: "", body: "" });
@@ -54,14 +79,13 @@ export function AdminView() {
   if (isLoading) return <Spinner />;
 
   return (
-    <div className="space-y-6">
-      <h2 className="flex items-center gap-2 text-xl font-bold">
+    <div className="max-w-lg space-y-3">
+      <h2 className="mb-1 flex items-center gap-2 text-xl font-bold">
         <Shield className="h-5 w-5 text-accent" /> Administración
       </h2>
 
       {/* Usuarios */}
-      <Card>
-        <h3 className="mb-3 font-semibold">Usuarios ({users?.length})</h3>
+      <AdminSection icon={<Users className="h-4 w-4" />} title="Usuarios">
         <div className="space-y-2">
           {users?.map((u) => (
             <div key={u.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-surface-2 p-3">
@@ -94,12 +118,11 @@ export function AdminView() {
             </div>
           ))}
         </div>
-      </Card>
+      </AdminSection>
 
       {/* Sistema de puntos */}
-      <Card className="space-y-4">
+      <AdminSection icon={<BarChart3 className="h-4 w-4" />} title="Sistema de puntos">
         <div className="space-y-1">
-          <h3 className="font-semibold">Sistema de puntos</h3>
           <p className="text-xs text-muted">
             Cada regla se otorga automáticamente. Puedes cambiar los puntos o desactivarlas.
           </p>
@@ -144,14 +167,11 @@ export function AdminView() {
             </div>
           ))}
         </div>
-      </Card>
+      </AdminSection>
 
       {/* Encuestas */}
-      <Card className="space-y-4">
+      <AdminSection icon={<BarChart3 className="h-4 w-4" />} title="Encuestas">
         <div className="space-y-1">
-          <h3 className="flex items-center gap-2 font-semibold">
-            <BarChart3 className="h-4 w-4" /> Encuestas
-          </h3>
           <p className="text-xs text-muted">Pregunta al grupo; los resultados se ven aquí abajo.</p>
         </div>
 
@@ -276,13 +296,21 @@ export function AdminView() {
                 {p.options.map((option, i) => {
                   const count = p.counts[i] ?? 0;
                   const pct = p.total > 0 ? Math.round((count / p.total) * 100) : 0;
+                  const voters = p.votersByOption?.[i] ?? [];
                   return (
-                    <div key={i} className="relative overflow-hidden rounded-lg bg-bg/40 px-2 py-1 text-xs">
-                      <span className="absolute inset-y-0 left-0 bg-accent/15" style={{ width: `${pct}%` }} />
-                      <span className="relative flex justify-between">
-                        <span>{option}</span>
-                        <span className="text-muted">{count} · {pct}%</span>
-                      </span>
+                    <div key={i} className="space-y-1 rounded-lg bg-bg/40 p-1.5">
+                      <div className="relative overflow-hidden rounded px-1 py-0.5 text-xs">
+                        <span className="absolute inset-y-0 left-0 bg-accent/15" style={{ width: `${pct}%` }} />
+                        <span className="relative flex justify-between">
+                          <span>{option}</span>
+                          <span className="text-muted">{count} · {pct}%</span>
+                        </span>
+                      </div>
+                      {voters.length > 0 && (
+                        <p className="pl-1 text-[11px] text-muted">
+                          {voters.map((v) => v.name).join(", ")}
+                        </p>
+                      )}
                     </div>
                   );
                 })}
@@ -291,7 +319,7 @@ export function AdminView() {
             ))}
           </div>
         )}
-      </Card>
+      </AdminSection>
 
       {/* Previsualización: así la verán los miembros */}
       <Modal open={previewOpen} onClose={() => setPreviewOpen(false)} title="Así la recibirá el grupo">
@@ -338,7 +366,7 @@ export function AdminView() {
       </Modal>
 
       {/* Feedback */}
-      <Card>
+      <AdminSection icon={<MessageSquare className="h-4 w-4" />} title="Feedback">
         <h3 className="mb-3 flex items-center gap-2 font-semibold">
           <MessageSquare className="h-4 w-4" /> Feedback de los usuarios ({feedbacks?.length ?? 0})
         </h3>
@@ -381,13 +409,63 @@ export function AdminView() {
             ))}
           </div>
         )}
-      </Card>
+      </AdminSection>
+
+      {/* Plantillas de notificación (disparador fijo, contenido editable) */}
+      <AdminSection icon={<MailPlus className="h-4 w-4" />} title="Plantillas de notificación">
+        <div className="space-y-1">
+          <p className="text-xs text-muted">
+            Los disparadores son fijos; puedes editar el texto o desactivarlos. Comodines disponibles:{" "}
+            <code className="text-accent">{"{name}"}</code> (protagonista),{" "}
+            <code className="text-accent">{"{count}"}</code>,{" "}
+            <code className="text-accent">{"{exercises}"}</code>,{" "}
+            <code className="text-accent">{"{routine}"}</code>,{" "}
+            <code className="text-accent">{"{days}"}</code>,{" "}
+            <code className="text-accent">{"{target}"}</code>.
+          </p>
+        </div>
+        <div className="space-y-3">
+          {templates?.map((t) => (
+            <div key={t.code} className={`space-y-2 rounded-xl bg-surface-2 p-3 ${!t.enabled ? "opacity-60" : ""}`}>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted">{t.code}</span>
+                <button
+                  onClick={() => updateTemplate.mutate({ code: t.code, enabled: !t.enabled })}
+                  className={`h-5 w-9 shrink-0 rounded-full p-0.5 transition ${t.enabled ? "bg-accent" : "bg-border"}`}
+                >
+                  <span className={`block h-4 w-4 rounded-full bg-bg transition-transform ${t.enabled ? "translate-x-4" : ""}`} />
+                </button>
+              </div>
+              <Input
+                defaultValue={t.title}
+                onBlur={(e) => { if (e.target.value.trim() && e.target.value !== t.title) updateTemplate.mutate({ code: t.code, title: e.target.value.trim() }); }}
+              />
+              <Input
+                defaultValue={t.body ?? ""}
+                placeholder="Mensaje (opcional)"
+                onBlur={(e) => { if (e.target.value !== (t.body ?? "")) updateTemplate.mutate({ code: t.code, body: e.target.value || null }); }}
+              />
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="secondary" loading={testNotification.isLoading}
+                  onClick={() => testNotification.mutate({ code: t.code })}>
+                  <Send className="h-3.5 w-3.5" /> Probar
+                </Button>
+                {testSent === t.code && <span className="text-xs text-accent">Enviada a ti ✅</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 border-t border-border pt-3">
+          <Button size="sm" variant="secondary" loading={testNotification.isLoading}
+            onClick={() => testNotification.mutate({})}>
+            <Send className="h-3.5 w-3.5" /> Enviar notificación de prueba
+          </Button>
+          {testSent === "generic" && <span className="text-xs text-accent">Enviada ✅</span>}
+        </div>
+      </AdminSection>
 
       {/* Aviso al grupo */}
-      <Card className="space-y-3">
-        <h3 className="flex items-center gap-2 font-semibold">
-          <Megaphone className="h-4 w-4" /> Notificación a todo el grupo
-        </h3>
+      <AdminSection icon={<Megaphone className="h-4 w-4" />} title="Notificación a todo el grupo">
         <div>
           <Label>Título</Label>
           <Input value={broadcast.title} onChange={(e) => setBroadcast((b) => ({ ...b, title: e.target.value }))} />
@@ -404,7 +482,7 @@ export function AdminView() {
           Enviar a todos
         </Button>
         {sent && <p className="text-sm text-accent">Enviada ✅</p>}
-      </Card>
+      </AdminSection>
     </div>
   );
 }

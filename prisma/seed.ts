@@ -55,7 +55,7 @@ const ACHIEVEMENTS: Array<{ code: string; name: string; description: string; ico
   // Uno por cada regla del sistema de puntos
   { code: "FIRST_ATTENDANCE", name: "Primera asistencia", description: "Registra tu primer día de gimnasio", icon: "📍", rarity: "COMUN" },
   { code: "ATTENDANCE_25", name: "25 asistencias", description: "Ve al gimnasio 25 veces", icon: "🎽", rarity: "RARO" },
-  { code: "SHARE_FIRST", name: "Espíritu de equipo", description: "Comparte una rutina con el grupo", icon: "🤝", rarity: "COMUN" },
+  { code: "SHARE_FIRST", name: "Espíritu de equipo", description: "Comparte con el grupo tu primera rutina creada", icon: "🤝", rarity: "COMUN" },
   { code: "STREAK_WEEK", name: "Primera semana cumplida", description: "Cumple tu plan semanal por primera vez", icon: "✅", rarity: "COMUN" },
   { code: "STREAK_CRACK", name: "Modo crack", description: "Supera el mes cumpliendo tu plan (5+ semanas seguidas)", icon: "💎", rarity: "EPICO" },
   { code: "FIRST_WORKOUT", name: "Primer entrenamiento", description: "Completa tu primer entrenamiento", icon: "🎯", rarity: "COMUN" },
@@ -68,6 +68,14 @@ const ACHIEVEMENTS: Array<{ code: string; name: string; description: string; ico
   { code: "VOLUME_1000", name: "1.000 kg levantados", description: "Acumula 1.000 kg de volumen total", icon: "🏗️", rarity: "COMUN" },
   { code: "VOLUME_10000", name: "10.000 kg levantados", description: "Acumula 10.000 kg de volumen total", icon: "🚛", rarity: "EPICO" },
   { code: "ATTENDANCE_100", name: "100 asistencias", description: "Ve al gimnasio 100 veces", icon: "🏛️", rarity: "EPICO" },
+];
+
+const NOTIFICATION_TEMPLATES: Array<{ code: string; title: string; body: string }> = [
+  { code: "REMINDER_WEEK_LEFT", title: "¡Te queda 1 día para cumplir tu semana! 🎯", body: "Un entreno más y mantienes la racha." },
+  { code: "REMINDER_INACTIVE", title: "Te echamos de menos 😴", body: "Hace días que no entrenas. ¡Hoy es buen día para volver!" },
+  { code: "FRIEND_WORKOUT_START", title: "{name} está entrenando 🏋️", body: "Ha empezado {routine}." },
+  { code: "FRIEND_PR", title: "¡{name} ha hecho {count} PR! 🎉", body: "Acaba de superar su récord en {exercises}." },
+  { code: "WEEK_COMPLETED", title: "¡Semana completada! ✅", body: "Has cumplido todos tus entrenos planificados." },
 ];
 
 async function main() {
@@ -93,6 +101,25 @@ async function main() {
       update: { name: a.name, description: a.description, icon: a.icon, rarity: a.rarity },
       create: a,
     });
+  }
+  // Textos antiguos que deben migrarse a la versión con nombre del protagonista
+  const LEGACY_TITLES: Record<string, string[]> = {
+    FRIEND_PR: ["¡Nuevo PR en el grupo! 🎉"],
+    FRIEND_WORKOUT_START: ["¡Alguien está entrenando! 🏋️"],
+  };
+  for (const t of NOTIFICATION_TEMPLATES) {
+    const existing = await prisma.notificationTemplate.findUnique({ where: { code: t.code } });
+    if (!existing) {
+      await prisma.notificationTemplate.create({ data: t });
+      continue;
+    }
+    // Solo se actualiza si el admin no lo ha personalizado
+    if ((LEGACY_TITLES[t.code] ?? []).includes(existing.title)) {
+      await prisma.notificationTemplate.update({
+        where: { code: t.code },
+        data: { title: t.title, body: t.body },
+      });
+    }
   }
   console.log("Seed completado ✅");
 }

@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import { awardPoints, addFeed, notify, notifyOthers, checkAchievements } from "./gamification";
+import { awardPoints, addFeed, notify, checkAchievements } from "./gamification";
 import { registerAttendance } from "./attendance-service";
 
 /** Tiempo máximo de una sesión: si se supera, se cierra sola. */
@@ -61,6 +61,7 @@ export async function finishWorkout(
   const bestByExercise = new Map(historicBests.map((b) => [b.exerciseId, b._max.weight ?? 0]));
 
   const newPRs: string[] = [];
+  const prExerciseNames: string[] = [];
   const prSideEffects: Promise<unknown>[] = [];
   for (const we of workout.exercises) {
     const best = we.sets
@@ -91,11 +92,21 @@ export async function finishWorkout(
         awardPoints(db, userId, "NEW_PR", { exerciseId: we.exerciseId, weight: best.weight }),
         // Público: el evento del PR. Privado: el peso alcanzado.
         addFeed(db, userId, "PR", `${user.name} consiguió un nuevo PR en ${we.exercise.name} 🎉`),
-        notifyOthers(db, userId, "FRIEND_PR", `${user.name} hizo un nuevo PR`, we.exercise.name),
       );
+      prExerciseNames.push(we.exercise.name);
     }
   }
   await Promise.all(prSideEffects);
+
+  // Un único aviso al grupo, con nombre y número de ejercicios (sin pesos)
+  if (prExerciseNames.length > 0) {
+    const { notifyGroupFromTemplate } = await import("./notify-templates");
+    await notifyGroupFromTemplate(db, userId, "FRIEND_PR", "prs", {
+      name: user.name,
+      count: prExerciseNames.length === 1 ? "1 nuevo" : `${prExerciseNames.length} nuevos`,
+      exercises: prExerciseNames.join(", "),
+    }, "FRIEND_PR");
+  }
 
   await Promise.all([
     awardPoints(db, userId, "WORKOUT_COMPLETED", { workoutId: workout.id }),
@@ -142,4 +153,23 @@ export async function autoCloseStaleWorkouts(db: PrismaClient, userId: string): 
     await finishWorkout(db, w.id, { auto: true, notes: "Cerrado automáticamente a las 3 horas" });
   }
   return stale.length;
+}
+
+/**
+ * Avisa al grupo cuando un entreno lleva más de 20 minutos activo (una sola vez).
+ * Se dispara desde la consulta del entreno activo del propio usuario.
+ */
+export async function notifyWorkoutStartedIfDue(db: PrismaClient, userId: string): Promise<void> {
+  const workout = await db.workout.findFirst({
+    where: { userId, endedAt: null, startNotified: false, startedAt: { lt: new Date(Date.now() - 20 * 60 * 1000) } },
+    include: { routine: { select: { name: true, emoji: true } } },
+  });
+  if (!workout) return;
+  await db.workout.update({ where: { id: workout.id }, data: { startNotified: true } });
+  const user = await db.user.findUniqueOrThrow({ where: { id: userId }, select: { name: true } });
+  const { notifyGroupFromTemplate } = await import("./notify-templates");
+  await notifyGroupFromTemplate(db, userId, "FRIEND_WORKOUT_START", "workouts", {
+    name: user.name,
+    routine: workout.routine ? `${workout.routine.emoji} ${workout.routine.name}` : "un entrenamiento",
+  });
 }

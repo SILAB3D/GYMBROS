@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
-import { awardPoints, addFeed, notifyOthers, checkAchievements } from "@/server/services/gamification";
+import { awardPoints, addFeed, checkAchievements } from "@/server/services/gamification";
 
 export const prRouter = createTRPCRouter({
   create: protectedProcedure
@@ -33,7 +33,10 @@ export const prRouter = createTRPCRouter({
         const user = await ctx.db.user.findUniqueOrThrow({ where: { id: userId }, select: { name: true } });
         // Público: el evento del PR. Privado: el peso alcanzado.
         await addFeed(ctx.db, userId, "PR", `${user.name} consiguió un nuevo PR en ${exercise.name} 🎉`);
-        await notifyOthers(ctx.db, userId, "FRIEND_PR", `${user.name} hizo un nuevo PR`, exercise.name);
+        const { notifyGroupFromTemplate } = await import("@/server/services/notify-templates");
+        await notifyGroupFromTemplate(ctx.db, userId, "FRIEND_PR", "prs", {
+          name: user.name, count: "1 nuevo", exercises: exercise.name,
+        }, "FRIEND_PR");
         await checkAchievements(ctx.db, userId);
       }
       return { pr, isNewBest };

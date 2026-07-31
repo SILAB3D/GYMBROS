@@ -163,6 +163,7 @@ model Workout {
   totalSets   Int       @default(0)
   totalReps   Int       @default(0)
   notes       String?
+  startNotified Boolean @default(false) // ya se avisó al grupo de que empezó
 
   exercises WorkoutExercise[]
 
@@ -518,4 +519,13 @@ model PollVote {
   createdAt   DateTime @default(now())
 
   @@unique([pollId, userId])
+}
+
+// ---------- Plantillas de notificación (disparador fijo, contenido editable) ----------
+
+model NotificationTemplate {
+  code      String  @id // identificador del disparador
+  title     String
+  body      String?
+  enabled   Boolean @default(true)
 }

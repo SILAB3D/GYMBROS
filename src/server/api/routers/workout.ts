@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
-import { finishWorkout, autoCloseStaleWorkouts } from "@/server/services/workout-service";
+import { finishWorkout, autoCloseStaleWorkouts, notifyWorkoutStartedIfDue } from "@/server/services/workout-service";
 
 export const workoutRouter = createTRPCRouter({
   // Iniciar sesión de entrenamiento (opcionalmente desde una rutina)
@@ -67,6 +67,8 @@ export const workoutRouter = createTRPCRouter({
   active: protectedProcedure.query(async ({ ctx }) => {
     // Autocierre: si hay una sesión con más de 3 horas, se finaliza sola
     await autoCloseStaleWorkouts(ctx.db, ctx.session.user.id);
+    // Aviso al grupo si el entreno lleva más de 20 min
+    await notifyWorkoutStartedIfDue(ctx.db, ctx.session.user.id);
     return ctx.db.workout.findFirst({
       where: { userId: ctx.session.user.id, endedAt: null },
       include: {

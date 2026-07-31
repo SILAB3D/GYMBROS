@@ -77,6 +77,7 @@ export async function registerAttendance(
           points > 0
             ? `+${points} puntos por cumplir tus ${user.weeklyTargetDays} días esta semana`
             : `Has cumplido tus ${user.weeklyTargetDays} días esta semana`,
+          "streaks",
         );
         if (weekStreak >= 4) {
           await addFeed(db, userId, "STREAK", `${user.name} lleva ${weekStreak} semanas cumpliendo su plan 💎`);
@@ -89,4 +90,67 @@ export async function registerAttendance(
 
   await checkAchievements(db, userId);
   return { attendance, alreadyRegistered: false, weekStreak };
+}
+
+/**
+ * Recalcula desde cero la racha semanal de un usuario a partir de sus
+ * asistencias (tras borrar un día, por ejemplo). Una semana cuenta si
+ * alcanza los días planificados.
+ */
+export async function recomputeStreak(db: PrismaClient, userId: string): Promise<void> {
+  const user = await db.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { weeklyTargetDays: true },
+  });
+  const attendances = await db.attendance.findMany({
+    where: { userId },
+    select: { date: true },
+    orderBy: { date: "asc" },
+  });
+  const lastDate = attendances.length > 0 ? attendances[attendances.length - 1]!.date : null;
+
+  if (user.weeklyTargetDays <= 0 || attendances.length === 0) {
+    await db.user.update({
+      where: { id: userId },
+      data: { currentStreak: 0, bestStreak: 0, lastCompletedWeek: null, lastAttendanceDate: lastDate },
+    });
+    return;
+  }
+
+  // Contar asistencias por semana ISO
+  const perWeek = new Map<number, number>();
+  for (const a of attendances) {
+    const k = startOfISOWeek(a.date).getTime();
+    perWeek.set(k, (perWeek.get(k) ?? 0) + 1);
+  }
+  const completedWeeks = Array.from(perWeek.entries())
+    .filter(([, count]) => count >= user.weeklyTargetDays)
+    .map(([k]) => k)
+    .sort((a, b) => a - b);
+
+  // Mejor racha = tramo más largo de semanas consecutivas cumplidas
+  let best = 0;
+  let current = 0;
+  let lastCompleted: number | null = null;
+  let prev: number | null = null;
+  for (const wk of completedWeeks) {
+    if (prev !== null && startOfISOWeek(subWeeks(new Date(wk), 1)).getTime() === prev) {
+      current += 1;
+    } else {
+      current = 1;
+    }
+    best = Math.max(best, current);
+    lastCompleted = wk;
+    prev = wk;
+  }
+
+  await db.user.update({
+    where: { id: userId },
+    data: {
+      currentStreak: current,
+      bestStreak: best,
+      lastCompletedWeek: lastCompleted ? new Date(lastCompleted) : null,
+      lastAttendanceDate: lastDate,
+    },
+  });
 }

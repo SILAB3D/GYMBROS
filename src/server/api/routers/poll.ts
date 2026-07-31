@@ -90,10 +90,14 @@ export const pollRouter = createTRPCRouter({
       });
     }),
 
-  // Resultados: SOLO el admin
+  // Resultados: SOLO el admin. Incluye quién votó cada opción.
   results: adminProcedure.query(async ({ ctx }) => {
     const polls = await ctx.db.poll.findMany({
-      include: { votes: { select: { optionIndex: true } } },
+      include: {
+        votes: {
+          select: { optionIndex: true, user: { select: { id: true, name: true, avatarUrl: true } } },
+        },
+      },
       orderBy: { createdAt: "desc" },
     });
     return polls.map((poll) => ({
@@ -106,6 +110,10 @@ export const pollRouter = createTRPCRouter({
       pending: poll.notifiedAt === null && poll.publishAt > new Date(),
       counts: poll.options.map((_, i) => poll.votes.filter((v) => v.optionIndex === i).length),
       total: poll.votes.length,
+      // Votantes agrupados por opción
+      votersByOption: poll.options.map((_, i) =>
+        poll.votes.filter((v) => v.optionIndex === i).map((v) => v.user),
+      ),
     }));
   }),
 

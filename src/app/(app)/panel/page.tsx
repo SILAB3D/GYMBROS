@@ -3,22 +3,20 @@
 import Link from "next/link";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { Flame, Trophy, SkipForward } from "lucide-react";
+import { Trophy } from "lucide-react";
 import { api } from "@/trpc/react";
-import { Button, Card, Spinner, Stat } from "@/components/ui";
+import { Card, Spinner } from "@/components/ui";
 import { MonthCalendar } from "@/components/month-calendar";
+import { PointsBreakdown } from "@/components/points-breakdown";
+import { StreakProgress } from "@/components/streak-progress";
+import { SeasonPanel } from "@/components/season-panel";
+import { StatsPanel } from "@/components/stats-panel";
 import { WorkoutLauncher } from "@/components/workout-launcher";
-import { formatKg } from "@/lib/utils";
+
 
 export default function DashboardPage() {
   const utils = api.useUtils();
   const { data, isLoading } = api.dashboard.summary.useQuery();
-  const advancePlan = api.plan.advance.useMutation({
-    onSuccess: () => {
-      utils.dashboard.summary.invalidate();
-      utils.plan.get.invalidate();
-    },
-  });
 
   if (isLoading || !data) return <Spinner />;
 
@@ -39,102 +37,26 @@ export default function DashboardPage() {
       {/* Botón central: registrar / actualizar entrenamiento */}
       <WorkoutLauncher />
 
-
-      {/* Stats rápidas */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat
-          label="Racha semanal"
-          value={
-            <span className="flex items-center gap-1">
-              {data.user.currentStreak} <Flame className="h-5 w-5 text-orange-400" />
-            </span>
-          }
-          sub={`Mejor: ${data.user.bestStreak} semanas`}
-        />
-        <Stat
-          label="Ranking semanal"
-          value={data.rankingPosition ? `#${data.rankingPosition}` : "—"}
-          sub={`${data.myWeekPoints} puntos`}
-        />
-        <Stat
-          label="Esta semana"
-          value={
-            data.user.weeklyTargetDays > 0
-              ? `${data.weekAttendances}/${data.user.weeklyTargetDays}`
-              : data.weekAttendances
-          }
-          sub={data.user.weeklyTargetDays > 0 ? "días planificados" : "asistencias"}
-        />
-        <Stat label="Volumen total" value={formatKg(data.totalVolume)} sub={`${data.totalWorkouts} entrenos`} />
+      {/* Temporada y progreso de racha */}
+      <div className="grid items-stretch gap-4 md:grid-cols-2">
+        <SeasonPanel season={data.season} />
+        <StreakProgress streak={data.user.currentStreak} rules={data.streakRules} />
       </div>
 
+
+      {/* Resumen de estadísticas */}
+      <StatsPanel
+        streak={data.user.currentStreak}
+        bestStreak={data.user.bestStreak}
+        rankingPosition={data.rankingPosition}
+        weekPoints={data.myWeekPoints}
+        weekAttendances={data.weekAttendances}
+        weeklyTarget={data.user.weeklyTargetDays}
+        totalVolume={data.totalVolume}
+        totalWorkouts={data.totalWorkouts}
+      />
+
       <div className="grid gap-6 md:grid-cols-2">
-        {/* Entrenamiento de hoy, según el plan */}
-        <Card>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold">Entrenamiento de hoy</h2>
-            <Link href="/entrenamiento?tab=plan" className="text-xs text-accent hover:underline">
-              Configurar plan
-            </Link>
-          </div>
-          {data.plan ? (
-            data.plan.next?.routine ? (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between rounded-xl bg-surface-2 p-3">
-                  <span className="flex items-center gap-2.5">
-                    <span className="text-2xl">{data.plan.next.routine.emoji}</span>
-                    <span>
-                      <span className="block font-medium">{data.plan.next.routine.name}</span>
-                      <span className="text-xs text-muted">
-                        {data.plan.next.routine._count.exercises} ejercicios · te toca hoy
-                      </span>
-                    </span>
-                  </span>
-                  <Button
-                    size="sm" variant="ghost" title="Saltar al siguiente"
-                    loading={advancePlan.isLoading}
-                    onClick={() => advancePlan.mutate()}
-                  >
-                    <SkipForward className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-                {data.plan.following && (
-                  <p className="text-xs text-muted">
-                    Después:{" "}
-                    {data.plan.following.routine
-                      ? `${data.plan.following.routine.emoji} ${data.plan.following.routine.name}`
-                      : "😴 descanso"}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="flex items-center justify-between rounded-xl bg-surface-2 p-3">
-                <span className="flex items-center gap-2.5">
-                  <span className="text-2xl">😴</span>
-                  <span>
-                    <span className="block font-medium">Día de descanso</span>
-                    <span className="text-xs text-muted">recuperar también es entrenar</span>
-                  </span>
-                </span>
-                <Button
-                  size="sm" variant="secondary"
-                  loading={advancePlan.isLoading}
-                  onClick={() => advancePlan.mutate()}
-                >
-                  Cumplido ✓
-                </Button>
-              </div>
-            )
-          ) : (
-            <p className="text-sm text-muted">
-              Define el orden de tus rutinas y descansos en{" "}
-              <Link href="/entrenamiento?tab=plan" className="text-accent hover:underline">
-                Entrenamiento → Plan
-              </Link>{" "}
-              y aquí verás siempre lo que te toca.
-            </p>
-          )}
-        </Card>
 
         {/* Calendario del mes */}
         <Card>
@@ -153,30 +75,17 @@ export default function DashboardPage() {
           />
         </Card>
 
-        {/* Últimos PRs */}
+        {/* Desglose de puntos */}
         <Card>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="flex items-center gap-2 font-semibold">
-              <Trophy className="h-4 w-4 text-gold" /> Últimos PRs
+              <Trophy className="h-4 w-4 text-gold" /> Mis puntos
             </h2>
-            <Link href="/entrenamiento?tab=prs" className="text-xs text-accent hover:underline">
-              Ver todos
+            <Link href="/comunidad?tab=ranking" className="text-xs text-accent hover:underline">
+              Ver ranking
             </Link>
           </div>
-          {data.recentPRs.length === 0 ? (
-            <p className="text-sm text-muted">Aún no tienes récords. ¡A por el primero! 💪</p>
-          ) : (
-            <div className="space-y-2">
-              {data.recentPRs.map((pr) => (
-                <div key={pr.id} className="flex items-center justify-between rounded-xl bg-surface-2 p-3">
-                  <span className="text-sm">{pr.exercise.name}</span>
-                  <span className="text-sm font-bold text-accent">
-                    {pr.weight} kg × {pr.reps}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+          <PointsBreakdown items={data.pointsBreakdown} total={data.totalPoints} />
         </Card>
 
       </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { TrendingUp, TrendingDown, Minus, Crown } from "lucide-react";
@@ -39,15 +40,15 @@ export function RankingView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="space-y-3">
         <h1 className="text-2xl font-bold">Ranking</h1>
-        <div className="flex gap-1 rounded-xl bg-surface p-1">
+        <div className="mx-auto flex w-full max-w-md justify-center gap-1 rounded-xl bg-surface p-1">
           {PERIODS.map((p) => (
             <button
               key={p.key}
               onClick={() => setPeriod(p.key)}
               className={cn(
-                "rounded-lg px-3 py-1.5 text-sm transition",
+                "flex-1 rounded-lg px-3 py-1.5 text-sm transition",
                 period === p.key ? "bg-accent font-medium text-accent-fg" : "text-muted hover:text-fg",
               )}
             >
@@ -61,6 +62,35 @@ export function RankingView() {
         <Spinner />
       ) : (
         <>
+          {/* Estado de la temporada */}
+          {period === "season" && (
+            <Card className="flex items-center justify-between gap-3 border-gold/30 bg-gold/5 py-3">
+              {data.season.started ? (
+                <>
+                  <div>
+                    <p className="font-semibold">🏆 Temporada {data.season.index}</p>
+                    <p className="text-xs text-muted">Al campeón le espera el título de la temporada.</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-bold text-gold">{data.season.daysLeft}</p>
+                    <p className="text-xs text-muted">días para el final</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <p className="font-semibold">La temporada 1 aún no ha empezado</p>
+                    <p className="text-xs text-muted">Arranca el 15 de agosto de 2026.</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-bold text-gold">{data.season.daysLeft}</p>
+                    <p className="text-xs text-muted">días para empezar</p>
+                  </div>
+                </>
+              )}
+            </Card>
+          )}
+
           {/* Podio top 3 */}
           {data.rows.length >= 2 && (
             <div className="flex items-end justify-center gap-3">
@@ -87,8 +117,10 @@ export function RankingView() {
                         <Crown className="h-6 w-6 text-gold" />
                       </motion.div>
                     )}
-                    <Avatar name={row.user.name} src={row.user.avatarUrl} size={isFirst ? 56 : 44} />
-                    <p className="max-w-full truncate text-sm font-medium">{row.user.name}</p>
+                    <Link href={`/perfil/${row.user.id}`} className="flex flex-col items-center gap-2 transition hover:opacity-80">
+                      <Avatar name={row.user.name} src={row.user.avatarUrl} size={isFirst ? 56 : 44} />
+                      <p className="max-w-full truncate text-sm font-medium">{row.user.name}</p>
+                    </Link>
                     <p className={cn("text-lg font-bold", isFirst ? "text-gold" : "text-accent")}>
                       {row.points} pts
                     </p>
@@ -112,13 +144,15 @@ export function RankingView() {
                 <span className="w-8 text-center font-bold text-muted">
                   {row.medal ?? row.position}
                 </span>
-                <Avatar name={row.user.name} src={row.user.avatarUrl} size={36} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{row.user.name}</p>
-                  {row.user.currentStreak > 0 && (
-                    <p className="text-xs text-muted">🔥 racha de {row.user.currentStreak} sem.</p>
-                  )}
-                </div>
+                <Link href={`/perfil/${row.user.id}`} className="flex min-w-0 flex-1 items-center gap-3 transition hover:opacity-80">
+                  <Avatar name={row.user.name} src={row.user.avatarUrl} size={36} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{row.user.name}</p>
+                    {row.user.currentStreak > 0 && (
+                      <p className="text-xs text-muted">🔥 racha de {row.user.currentStreak} sem.</p>
+                    )}
+                  </div>
+                </Link>
                 {row.delta !== null && row.delta !== 0 && (
                   <Badge className={row.delta > 0 ? "text-accent" : "text-red-400"}>
                     {row.delta > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
@@ -137,13 +171,20 @@ export function RankingView() {
               <h2 className="mb-3 font-semibold">🏆 Palmarés</h2>
               <div className="space-y-2">
                 {seasons?.map((s) => (
-                  <div key={s.label} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-surface-2 p-3 text-sm">
-                    <span className="font-semibold">{s.label}</span>
-                    {s.podium.map((p, i) => (
-                      <span key={i} className="text-muted">
-                        {["🥇", "🥈", "🥉"][i]} {p.name} ({p.points})
-                      </span>
-                    ))}
+                  <div key={s.label} className="rounded-xl bg-surface-2 p-3 text-sm">
+                    <div className="mb-1 flex items-center justify-between">
+                      <span className="font-semibold">{s.label}</span>
+                      {s.champion && (
+                        <span className="rounded-full bg-gold/15 px-2 py-0.5 text-xs font-medium text-gold">
+                          👑 Campeón: {s.champion.name}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-muted">
+                      {s.podium.map((p, i) => (
+                        <span key={i}>{["🥇", "🥈", "🥉"][i]} {p.name} ({p.points})</span>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -154,6 +195,7 @@ export function RankingView() {
           {(breakdown?.length ?? 0) > 0 && (
             <Card>
               <h2 className="mb-3 font-semibold">Mis puntos este periodo</h2>
+              <p className="mb-2 text-xs text-muted">La flecha compara con el mismo tramo transcurrido del periodo anterior.</p>
               <div className="space-y-2">
                 {breakdown?.map((b) => (
                   <div key={b.type} className="flex justify-between text-sm">

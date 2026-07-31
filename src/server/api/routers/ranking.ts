@@ -1,29 +1,43 @@
 import { z } from "zod";
 import {
   startOfISOWeek, endOfISOWeek, startOfMonth, endOfMonth, startOfYear, endOfYear,
-  startOfQuarter, endOfQuarter, subWeeks, subMonths, subQuarters, subYears, getQuarter, getYear,
+  subWeeks, subMonths, subYears,
 } from "date-fns";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { effectiveWeekStreak } from "@/server/services/streak";
+import { seasonAt, seasonRange, SEASON_ANCHOR } from "@/server/services/season";
 
 type Period = "week" | "month" | "season" | "year";
 
-function periodRange(period: Period, offset = 0): { from: Date; to: Date } {
+function periodRange(period: Period): { from: Date; to: Date } {
   const now = new Date();
-  if (period === "week") {
-    const ref = subWeeks(now, offset);
-    return { from: startOfISOWeek(ref), to: endOfISOWeek(ref) };
-  }
-  if (period === "month") {
-    const ref = subMonths(now, offset);
-    return { from: startOfMonth(ref), to: endOfMonth(ref) };
-  }
+  if (period === "week") return { from: startOfISOWeek(now), to: endOfISOWeek(now) };
+  if (period === "month") return { from: startOfMonth(now), to: endOfMonth(now) };
   if (period === "season") {
-    const ref = subQuarters(now, offset);
-    return { from: startOfQuarter(ref), to: endOfQuarter(ref) };
+    const s = seasonAt(now);
+    return { from: s.started ? s.from : SEASON_ANCHOR, to: s.to };
   }
-  const ref = subYears(now, offset);
-  return { from: startOfYear(ref), to: endOfYear(ref) };
+  return { from: startOfYear(now), to: endOfYear(now) };
+}
+
+/**
+ * Ventana previa COMPARABLE: el mismo tramo transcurrido, pero del periodo
+ * anterior. Así un lunes se compara con el lunes de la semana pasada, no con
+ * el domingo completo.
+ */
+function comparablePreviousRange(period: Period): { from: Date; to: Date } {
+  const now = new Date();
+  const cur = periodRange(period);
+  const elapsedMs = now.getTime() - cur.from.getTime();
+  let prevFrom: Date;
+  if (period === "week") prevFrom = subWeeks(cur.from, 1);
+  else if (period === "month") prevFrom = subMonths(cur.from, 1);
+  else if (period === "year") prevFrom = subYears(cur.from, 1);
+  else {
+    const s = seasonAt(now);
+    prevFrom = seasonRange(Math.max(1, s.index - 1)).from;
+  }
+  return { from: prevFrom, to: new Date(prevFrom.getTime() + elapsedMs) };
 }
 
 async function computeRanking(
@@ -46,7 +60,8 @@ export const rankingRouter = createTRPCRouter({
     .input(z.object({ period: z.enum(["week", "month", "season", "year"]).default("week") }))
     .query(async ({ ctx, input }) => {
       const current = periodRange(input.period);
-      const previous = periodRange(input.period, 1);
+      // Comparación por tramos equivalentes de tiempo transcurrido
+      const previous = comparablePreviousRange(input.period);
 
       const [users, currentRanking, previousRanking] = await Promise.all([
         ctx.db.user.findMany({
@@ -59,7 +74,6 @@ export const rankingRouter = createTRPCRouter({
       const prevPos = new Map(previousRanking.map((r, i) => [r.userId, i + 1]));
       const pointsByUser = new Map(currentRanking.map((r) => [r.userId, r.points]));
 
-      // Incluir a todos los usuarios aunque tengan 0 puntos
       const rows = users
         .map(({ lastCompletedWeek, ...u }) => ({
           user: { ...u, currentStreak: effectiveWeekStreak(u.currentStreak, lastCompletedWeek) },
@@ -73,16 +87,29 @@ export const rankingRouter = createTRPCRouter({
             ...row,
             position,
             previousPosition: prev,
-            delta: prev === null ? null : prev - position, // positivo = ha subido
+            delta: prev === null ? null : prev - position,
             medal: position === 1 ? "🥇" : position === 2 ? "🥈" : position === 3 ? "🥉" : null,
           };
         });
 
       const myPosition = rows.find((r) => r.user.id === ctx.session.user.id)?.position ?? null;
-      return { rows, myPosition, from: current.from, to: current.to };
+      const season = seasonAt();
+      return {
+        rows,
+        myPosition,
+        from: current.from,
+        to: current.to,
+        // Info de temporada (solo relevante para el periodo "season")
+        season: {
+          index: season.index,
+          started: season.started,
+          daysLeft: season.daysLeft,
+          from: season.from,
+          to: season.to,
+        },
+      };
     }),
 
-  // Desglose de puntos del usuario en el periodo (transparencia del sistema)
   myBreakdown: protectedProcedure
     .input(z.object({ period: z.enum(["week", "month", "season", "year"]).default("week") }))
     .query(async ({ ctx, input }) => {
@@ -96,37 +123,31 @@ export const rankingRouter = createTRPCRouter({
       return grouped.map((g) => ({ type: g.type, points: g._sum.points ?? 0, count: g._count }));
     }),
 
-  // Palmarés: campeones de las temporadas (trimestres) ya terminadas
+  // Palmarés: campeones de las temporadas ya terminadas (3 meses, desde 15-ago-2026)
   seasons: protectedProcedure.query(async ({ ctx }) => {
-    const first = await ctx.db.pointEvent.findFirst({ orderBy: { date: "asc" }, select: { date: true } });
-    if (!first) return [];
     const users = await ctx.db.user.findMany({ select: { id: true, name: true, avatarUrl: true } });
     const byId = new Map(users.map((u) => [u.id, u]));
+    const currentIndex = seasonAt().index;
 
     const seasons: Array<{
       label: string;
-      from: Date;
-      to: Date;
+      champion: { name: string; avatarUrl: string | null } | null;
       podium: Array<{ name: string; avatarUrl: string | null; points: number }>;
     }> = [];
-    const now = new Date();
-    let cursor = startOfQuarter(now); // el trimestre actual aún no cuenta
-    for (let i = 0; i < 8; i++) {
-      cursor = subQuarters(cursor, 1);
-      const from = startOfQuarter(cursor);
-      const to = endOfQuarter(cursor);
-      if (to < first.date) break;
+    // Solo temporadas ya terminadas (índice < actual)
+    for (let idx = currentIndex - 1; idx >= 1 && seasons.length < 8; idx--) {
+      const { from, to } = seasonRange(idx);
       const ranking = await computeRanking(ctx.db, from, to);
       if (ranking.length === 0) continue;
+      const podium = ranking.slice(0, 3).map((r) => ({
+        name: byId.get(r.userId)?.name ?? "¿?",
+        avatarUrl: byId.get(r.userId)?.avatarUrl ?? null,
+        points: r.points,
+      }));
       seasons.push({
-        label: `${getYear(from)} · T${getQuarter(from)}`,
-        from,
-        to,
-        podium: ranking.slice(0, 3).map((r) => ({
-          name: byId.get(r.userId)?.name ?? "¿?",
-          avatarUrl: byId.get(r.userId)?.avatarUrl ?? null,
-          points: r.points,
-        })),
+        label: `Temporada ${idx}`,
+        champion: podium[0] ? { name: podium[0].name, avatarUrl: podium[0].avatarUrl } : null,
+        podium,
       });
     }
     return seasons;

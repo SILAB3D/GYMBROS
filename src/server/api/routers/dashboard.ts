@@ -3,6 +3,7 @@ import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { autoCloseStaleWorkouts } from "@/server/services/workout-service";
 import { effectiveWeekStreak } from "@/server/services/streak";
 import { reconcilePlan } from "@/server/services/plan-service";
+import { seasonAt } from "@/server/services/season";
 
 export const dashboardRouter = createTRPCRouter({
   summary: protectedProcedure.query(async ({ ctx }) => {
@@ -84,6 +85,46 @@ export const dashboardRouter = createTRPCRouter({
     const myIndex = sorted.findIndex((r) => r.userId === userId);
     const myWeekPoints = myIndex >= 0 ? sorted[myIndex]?.points ?? 0 : 0;
 
+    // Desglose de puntos del usuario por categoría (histórico)
+    const breakdownRaw = await ctx.db.pointEvent.groupBy({
+      by: ["type"],
+      where: { userId },
+      _sum: { points: true },
+      _count: true,
+    });
+    const pointsBreakdown = breakdownRaw.map((g) => ({
+      type: g.type,
+      points: g._sum.points ?? 0,
+      count: g._count,
+    }));
+    const totalPoints = pointsBreakdown.reduce((acc, b) => acc + b.points, 0);
+
+    // Puntos configurados de las etapas de racha (para la barra de progreso)
+    const streakRulesRaw = await ctx.db.pointRule.findMany({
+      where: { type: { in: ["STREAK_WEEK1", "STREAK_WEEK2", "STREAK_WEEK3", "STREAK_MONTH", "STREAK_CRACK"] } },
+      select: { type: true, points: true, enabled: true },
+    });
+    const streakRules = streakRulesRaw
+      .filter((r): r is typeof r & { type: NonNullable<typeof r.type> } => r.type !== null)
+      .map((r) => ({ type: r.type as string, points: r.points, enabled: r.enabled }));
+
+    // Temporada actual + puntos del usuario en ella
+    const season = seasonAt(now);
+    const seasonPointsAgg = season.started
+      ? await ctx.db.pointEvent.aggregate({
+          where: { userId, date: { gte: season.from, lte: season.to } },
+          _sum: { points: true },
+        })
+      : null;
+    const seasonTopAgg = season.started
+      ? await ctx.db.pointEvent.groupBy({
+          by: ["userId"],
+          where: { date: { gte: season.from, lte: season.to } },
+          _sum: { points: true },
+        })
+      : [];
+    const seasonTop = Math.max(1, ...seasonTopAgg.map((g) => g._sum.points ?? 0));
+
     // Siguiente slot del plan (y el que viene después, como adelanto)
     const plan =
       planSlots.length > 0
@@ -106,6 +147,18 @@ export const dashboardRouter = createTRPCRouter({
       weekAttendances,
       monthAttendanceDates: monthAttendances.map((a) => a.date),
       recentPRs,
+      pointsBreakdown,
+      totalPoints,
+      streakRules,
+      season: {
+        index: season.index,
+        started: season.started,
+        daysLeft: season.daysLeft,
+        from: season.from,
+        to: season.to,
+        myPoints: seasonPointsAgg?._sum.points ?? 0,
+        topPoints: seasonTop,
+      },
       rankingPosition: myIndex >= 0 ? myIndex + 1 : null,
       totalGroupWeekPoints: weekPoints._sum.points ?? 0,
       myWeekPoints,
