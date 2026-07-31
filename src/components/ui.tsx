@@ -150,7 +150,7 @@ export function ProgressBar({ value, className }: { value: number; className?: s
 // ---------- Estados ----------
 
 export function Spinner({ className }: { className?: string }) {
-  return <GymLoader className={cn("flex min-h-[45dvh] w-full items-center justify-center", className)} />;
+  return <GymLoader className={className} />;
 }
 
 export function EmptyState({

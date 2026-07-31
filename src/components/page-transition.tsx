@@ -1,36 +1,59 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GymLoader } from "@/components/gym-loader";
 
+type Phase = "idle" | "leaving" | "loading" | "entering";
+
 /**
- * Transición entre pantallas: mientras la nueva ruta prepara sus datos se
- * muestra un cargador centrado con motivos de gimnasio, y luego el contenido
- * entra con un fundido suave.
+ * Transición encadenada al cambiar de pantalla:
+ *   contenido actual → se desvanece → cargador → se desvanece → nueva pantalla.
+ * El cargador solo aparece si la ruta tarda; si va rápida, se encadenan los fundidos.
  */
 export function PageTransition({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [shown, setShown] = useState(false);
+  const [phase, setPhase] = useState<Phase>("entering");
+  const first = useRef(true);
 
   useEffect(() => {
-    setShown(false);
-    // Un frame de margen: si la ruta ya está lista, el cargador apenas se ve
-    const t = setTimeout(() => setShown(true), 90);
-    return () => clearTimeout(t);
+    // La primera carga no necesita fundido de salida
+    if (first.current) {
+      first.current = false;
+      const t = setTimeout(() => setPhase("idle"), 320);
+      return () => clearTimeout(t);
+    }
+
+    // 1) El contenido anterior se desvanece
+    setPhase("leaving");
+    // 2) Aparece el cargador (con su propio fundido de entrada)
+    const toLoading = setTimeout(() => setPhase("loading"), 180);
+    // 3) El cargador se desvanece y entra la nueva pantalla
+    const toEntering = setTimeout(() => setPhase("entering"), 460);
+    const toIdle = setTimeout(() => setPhase("idle"), 800);
+
+    return () => {
+      clearTimeout(toLoading);
+      clearTimeout(toEntering);
+      clearTimeout(toIdle);
+    };
   }, [pathname]);
+
+  const showLoader = phase === "loading";
+  const contentVisible = phase === "idle" || phase === "entering";
 
   return (
     <div className="relative">
-      {!shown && (
-<GymLoader className="flex min-h-[65dvh] w-full items-center justify-center" />
-      )}
+      {/* Cargador fijo en el centro: se desvanece antes de mostrar el contenido */}
+      {phase !== "idle" && <GymLoader visible={showLoader} />}
+
+      {/* Contenido: se desvanece al salir y entra suavemente */}
       <div
         className="transition-all duration-300 ease-out"
         style={{
-          opacity: shown ? 1 : 0,
-          transform: shown ? "translateY(0)" : "translateY(10px)",
-          display: shown ? undefined : "none",
+          opacity: contentVisible ? 1 : 0,
+          transform: contentVisible ? "translateY(0)" : "translateY(8px)",
+          pointerEvents: contentVisible ? undefined : "none",
         }}
       >
         {children}
