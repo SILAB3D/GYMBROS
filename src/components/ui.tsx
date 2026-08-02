@@ -3,7 +3,8 @@
 import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 import { GymLoader } from "@/components/gym-loader";
-import { forwardRef } from "react";
+import { forwardRef, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 // ---------- Button ----------
 
@@ -187,20 +188,37 @@ export function Modal({
   title?: string;
   children: React.ReactNode;
 }) {
-  if (!open) return null;
-  return (
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  // Bloquear el scroll del fondo mientras el modal está abierto
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [open]);
+
+  if (!open || !mounted) return null;
+
+  // Portal en <body>: si se renderizara dentro de la página, un ancestro con
+  // `transform` haría que el fondo fijo no cubriera toda la pantalla.
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4"
       onClick={onClose}
     >
       <div
-        className="max-h-[90dvh] w-full overflow-y-auto rounded-t-2xl border border-border bg-surface p-5 sm:max-w-lg sm:rounded-2xl"
+        className="max-h-[90dvh] w-full overflow-y-auto rounded-t-2xl border border-border bg-surface p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:max-w-lg sm:rounded-2xl sm:pb-5"
         onClick={(e) => e.stopPropagation()}
       >
         {title && <h2 className="mb-4 text-lg font-semibold">{title}</h2>}
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
