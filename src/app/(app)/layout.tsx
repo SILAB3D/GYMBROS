@@ -6,6 +6,7 @@ import { PollGate } from "@/components/poll-gate";
 import { OnboardingTutorial } from "@/components/onboarding-tutorial";
 import { OfflineManager } from "@/components/offline-manager";
 import { PageTransition } from "@/components/page-transition";
+import { AppSplash } from "@/components/app-splash";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerAuthSession();
@@ -22,6 +23,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <PollGate />
       <OnboardingTutorial />
       <OfflineManager />
+      <AppSplash />
       <BottomNav />
     </div>
   );
