@@ -39,6 +39,17 @@ const CATALOG: Array<[string, MuscleGroup]> = [
   ["Remo (máquina)", "CARDIO"], ["Comba", "CARDIO"], ["Escaladora", "CARDIO"],
 ];
 
+/**
+ * Ejercicios del catálogo global que no se hacen con peso: en el entreno solo
+ * se piden repeticiones y su progreso se mide en reps, no en kg.
+ */
+const NO_WEIGHT: string[] = [
+  "Flexiones", "Fondos en paralelas", "Fondos entre bancos", "Dominadas", "Hiperextensiones",
+  "Plancha", "Crunch abdominal", "Elevación de piernas", "Rueda abdominal", "Russian twist",
+  "Puente de glúteos", "Zancadas",
+  "Cinta de correr", "Bicicleta estática", "Elíptica", "Remo (máquina)", "Comba", "Escaladora",
+];
+
 const POINT_RULES: Array<{ type: PointType; name: string; points: number }> = [
   { type: "ATTENDANCE", name: "Ir al gimnasio", points: 10 },
   { type: "WORKOUT_COMPLETED", name: "Completar rutina", points: 15 },
@@ -85,8 +96,14 @@ async function main() {
   });
 
   for (const [name, muscleGroup] of CATALOG) {
+    const noWeight = NO_WEIGHT.includes(name);
     const existing = await prisma.exercise.findFirst({ where: { name, createdById: null } });
-    if (!existing) await prisma.exercise.create({ data: { name, muscleGroup } });
+    if (!existing) {
+      await prisma.exercise.create({ data: { name, muscleGroup, noWeight } });
+    } else if (noWeight && !existing.noWeight) {
+      // Marca los ejercicios sin peso también en catálogos ya creados
+      await prisma.exercise.update({ where: { id: existing.id }, data: { noWeight: true } });
+    }
   }
   for (const rule of POINT_RULES) {
     await prisma.pointRule.upsert({

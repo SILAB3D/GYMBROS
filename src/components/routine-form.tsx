@@ -15,6 +15,8 @@ const EMOJIS = ["💪", "🏋️", "🦵", "🔥", "⚡", "🐻", "🦍", "🚀"
 export type RoutineFormExercise = {
   exerciseId: string;
   name: string;
+  /** El ejercicio no lleva carga: solo se registran repeticiones. */
+  noWeight?: boolean;
   sets: number | null; // null = casilla vacía (se marca en rojo y no deja guardar)
   reps: number | null;
   targetWeight: number | null;
@@ -43,6 +45,7 @@ export function RoutineForm({
   const router = useRouter();
   const utils = api.useUtils();
   const { data: catalog } = api.exercise.list.useQuery();
+  const { data: me } = api.user.me.useQuery();
 
   const [form, setForm] = useState<RoutineFormValue>(
     initial ?? {
@@ -99,7 +102,11 @@ export function RoutineForm({
     setDraftRestored(false);
   }
 
-  const [newExercise, setNewExercise] = useState({ name: "", muscleGroup: "PECHO" as MuscleGroup });
+  const [newExercise, setNewExercise] = useState({
+    name: "",
+    muscleGroup: "PECHO" as MuscleGroup,
+    noWeight: false,
+  });
 
   const onSuccess = async () => {
     localStorage.removeItem(draftKey);
@@ -116,17 +123,32 @@ export function RoutineForm({
   const createExercise = api.exercise.create.useMutation({
     onSuccess: async (created) => {
       await utils.exercise.list.invalidate();
-      addExercise(created.id, created.name);
-      setNewExercise({ name: "", muscleGroup: "PECHO" });
+      addExercise(created.id, created.name, created.noWeight);
+      setNewExercise({ name: "", muscleGroup: "PECHO", noWeight: false });
+    },
+  });
+  // Marcar un ejercicio como "sin peso" afecta al catálogo, así que se refleja
+  // al momento en todas las filas que lo usan.
+  const setNoWeight = api.exercise.setNoWeight.useMutation({
+    onSuccess: (updated) => {
+      void utils.exercise.list.invalidate();
+      setForm((f) => ({
+        ...f,
+        exercises: f.exercises.map((e) =>
+          e.exerciseId === updated.id
+            ? { ...e, noWeight: updated.noWeight, targetWeight: updated.noWeight ? null : e.targetWeight }
+            : e,
+        ),
+      }));
     },
   });
 
-  function addExercise(exerciseId: string, name: string) {
+  function addExercise(exerciseId: string, name: string, noWeight = false) {
     setForm((f) => ({
       ...f,
       exercises: [
         ...f.exercises,
-        { exerciseId, name, sets: 3, reps: 10, targetWeight: null, restSeconds: 90, notes: null },
+        { exerciseId, name, noWeight, sets: 3, reps: 10, targetWeight: null, restSeconds: 90, notes: null },
       ],
     }));
     setPickerOpen(false);
@@ -167,6 +189,17 @@ export function RoutineForm({
     if (routineId) update.mutate({ id: routineId, ...payload });
     else create.mutate(payload);
   }
+
+  // El catálogo manda sobre lo guardado en el borrador: si el ejercicio se
+  // marcó como "sin peso" después, la fila se entera igualmente.
+  const catalogById = new Map((catalog ?? []).map((e) => [e.id, e]));
+  const isNoWeight = (exerciseId: string, fallback?: boolean) =>
+    catalogById.get(exerciseId)?.noWeight ?? fallback ?? false;
+  const canEditNoWeight = (exerciseId: string) => {
+    const ex = catalogById.get(exerciseId);
+    if (!ex) return false;
+    return ex.createdById !== null || me?.role === "ADMIN";
+  };
 
   const filteredCatalog = (catalog ?? []).filter((e) => matchesExercise(e.name, search));
   const grouped = filteredCatalog.reduce<Record<string, typeof catalog>>((acc, e) => {
@@ -337,9 +370,15 @@ export function RoutineForm({
               </div>
               <div>
                 <Label>Peso (kg) — opcional</Label>
-                <Input type="number" min={0} step="0.5" value={e.targetWeight ?? ""}
-                  placeholder="—"
-                  onChange={(ev) => updateExercise(i, { targetWeight: ev.target.value ? +ev.target.value : null })} />
+                {isNoWeight(e.exerciseId, e.noWeight) ? (
+                  <p className="flex h-10 items-center rounded-xl border border-dashed border-border px-3 text-sm text-muted">
+                    Sin peso
+                  </p>
+                ) : (
+                  <Input type="number" min={0} step="0.5" value={e.targetWeight ?? ""}
+                    placeholder="—"
+                    onChange={(ev) => updateExercise(i, { targetWeight: ev.target.value ? +ev.target.value : null })} />
+                )}
               </div>
               <div>
                 <Label>Descanso (s) — opcional</Label>
@@ -348,6 +387,23 @@ export function RoutineForm({
                   onChange={(ev) => updateExercise(i, { restSeconds: ev.target.value ? +ev.target.value : null })} />
               </div>
             </div>
+            <label
+              className="flex items-center gap-2 text-xs text-muted"
+              title={
+                canEditNoWeight(e.exerciseId)
+                  ? "Los ejercicios sin peso solo piden repeticiones y su progreso se mide en reps"
+                  : "Solo un admin puede cambiarlo en los ejercicios del catálogo general"
+              }
+            >
+              <input
+                type="checkbox"
+                checked={isNoWeight(e.exerciseId, e.noWeight)}
+                disabled={!canEditNoWeight(e.exerciseId) || setNoWeight.isLoading}
+                onChange={(ev) => setNoWeight.mutate({ id: e.exerciseId, noWeight: ev.target.checked })}
+                className="h-3.5 w-3.5 accent-[hsl(var(--accent))] disabled:opacity-40"
+              />
+              Este ejercicio no se hace con peso (solo repeticiones)
+            </label>
             <Input
               value={e.notes ?? ""}
               placeholder="Notas (opcional)"
@@ -412,10 +468,11 @@ export function RoutineForm({
                   {exercises?.map((ex) => (
                     <button
                       key={ex.id}
-                      onClick={() => addExercise(ex.id, ex.name)}
+                      onClick={() => addExercise(ex.id, ex.name, ex.noWeight)}
                       className="rounded-lg bg-surface-2 px-2.5 py-1.5 text-sm hover:bg-accent/20"
                     >
                       {ex.name}
+                      {ex.noWeight && <span className="ml-1 text-xs text-muted">· sin peso</span>}
                     </button>
                   ))}
                 </div>
@@ -448,6 +505,15 @@ export function RoutineForm({
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
+            <label className="mt-2 flex items-center gap-2 text-xs text-muted">
+              <input
+                type="checkbox"
+                checked={newExercise.noWeight}
+                onChange={(e) => setNewExercise((n) => ({ ...n, noWeight: e.target.checked }))}
+                className="h-3.5 w-3.5 accent-[hsl(var(--accent))]"
+              />
+              No se hace con peso (dominadas, plancha, cardio…)
+            </label>
           </div>
         </div>
       </Modal>

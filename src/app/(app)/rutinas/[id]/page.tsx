@@ -27,6 +27,7 @@ export default function EditRoutinePage() {
           exercises: routine.exercises.map((e) => ({
             exerciseId: e.exerciseId,
             name: e.exercise.name,
+            noWeight: e.exercise.noWeight,
             sets: e.sets,
             reps: e.reps,
             targetWeight: e.targetWeight,

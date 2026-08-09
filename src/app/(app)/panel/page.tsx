@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { Trophy } from "lucide-react";
+import { Trophy, AlertTriangle } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Card, Spinner } from "@/components/ui";
 import { MonthCalendar } from "@/components/month-calendar";
@@ -36,6 +36,20 @@ export default function DashboardPage() {
 
       {/* Botón central: registrar / actualizar entrenamiento */}
       <WorkoutLauncher />
+
+      {/* Aviso cuando la racha se juega los últimos días de la semana */}
+      {data.streak.atRisk && data.streak.missing >= data.streak.daysLeft && (
+        <Card className="flex items-center gap-3 border-amber-400/40 bg-amber-400/5 py-3">
+          <AlertTriangle className="h-5 w-5 shrink-0 text-amber-400" />
+          <p className="text-sm">
+            <strong>Racha en peligro.</strong>{" "}
+            Te {data.streak.missing === 1 ? "queda" : "quedan"} {data.streak.missing}{" "}
+            {data.streak.missing === 1 ? "entreno" : "entrenos"} y {data.streak.daysLeft}{" "}
+            {data.streak.daysLeft === 1 ? "día" : "días"} de semana para no perder tus{" "}
+            {data.user.currentStreak} {data.user.currentStreak === 1 ? "semana" : "semanas"}.
+          </p>
+        </Card>
+      )}
 
       {/* Temporada y progreso de racha */}
       <div className="grid items-stretch gap-4 md:grid-cols-2">

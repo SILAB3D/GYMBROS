@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { hash } from "bcryptjs";
 import { TRPCError } from "@trpc/server";
+import { startOfISOWeek, endOfISOWeek } from "date-fns";
 import { createTRPCRouter, publicProcedure, protectedProcedure } from "@/server/api/trpc";
-import { effectiveWeekStreak } from "@/server/services/streak";
+import { effectiveWeekStreak, streaksForUsers } from "@/server/services/streak";
 
 export const userRouter = createTRPCRouter({
   register: publicProcedure
@@ -118,6 +119,8 @@ export const userRouter = createTRPCRouter({
             bestStreak: 0,
             lastAttendanceDate: null,
             lastCompletedWeek: null,
+            streakWarnedWeek: null,
+            streakLostWeek: null,
             planPosition: 0,
           },
         }),
@@ -134,9 +137,10 @@ export const userRouter = createTRPCRouter({
         select: {
           id: true, name: true, avatarUrl: true, gymStartDate: true,
           currentStreak: true, bestStreak: true, lastCompletedWeek: true, createdAt: true,
+          weeklyTargetDays: true,
         },
       });
-      const [attendances, workouts, recentPRs, routines, achievements, points, breakdownRaw] =
+      const [attendances, workouts, recentPRs, routines, achievements, points, breakdownRaw, weekCount] =
         await Promise.all([
           ctx.db.attendance.count({ where: { userId: user.id } }),
           ctx.db.workout.count({ where: { userId: user.id, endedAt: { not: null } } }),
@@ -175,12 +179,23 @@ export const userRouter = createTRPCRouter({
             _sum: { points: true },
             _count: true,
           }),
+          ctx.db.attendance.count({
+            where: {
+              userId: input.userId,
+              date: { gte: startOfISOWeek(new Date()), lte: endOfISOWeek(new Date()) },
+            },
+          }),
         ]);
-      const { lastCompletedWeek, ...publicUser } = user;
+      const { lastCompletedWeek, weeklyTargetDays, ...publicUser } = user;
       return {
         user: {
           ...publicUser,
-          currentStreak: effectiveWeekStreak(user.currentStreak, lastCompletedWeek),
+          currentStreak: effectiveWeekStreak({
+            currentStreak: user.currentStreak,
+            lastCompletedWeek,
+            weeklyTargetDays,
+            weekCount,
+          }),
         },
         attendances, workouts, recentPRs, routines, achievements,
         totalPoints: points._sum.points ?? 0,
@@ -204,12 +219,16 @@ export const userRouter = createTRPCRouter({
 
   list: protectedProcedure.query(async ({ ctx }) => {
     const users = await ctx.db.user.findMany({
-      select: { id: true, name: true, avatarUrl: true, currentStreak: true, lastCompletedWeek: true },
+      select: {
+        id: true, name: true, avatarUrl: true,
+        currentStreak: true, lastCompletedWeek: true, weeklyTargetDays: true,
+      },
       orderBy: { name: "asc" },
     });
-    return users.map(({ lastCompletedWeek, ...u }) => ({
+    const streaks = await streaksForUsers(ctx.db, users);
+    return users.map(({ lastCompletedWeek, weeklyTargetDays, ...u }) => ({
       ...u,
-      currentStreak: effectiveWeekStreak(u.currentStreak, lastCompletedWeek),
+      currentStreak: streaks.get(u.id) ?? 0,
     }));
   }),
 });

@@ -56,20 +56,31 @@ export async function finishWorkout(
   const historicBests = await db.personalRecord.groupBy({
     by: ["exerciseId"],
     where: { userId, exerciseId: { in: exerciseIds } },
-    _max: { weight: true },
+    _max: { weight: true, reps: true },
   });
-  const bestByExercise = new Map(historicBests.map((b) => [b.exerciseId, b._max.weight ?? 0]));
+  // En los ejercicios sin peso el récord son las repeticiones de una serie
+  const bestByExercise = new Map(
+    historicBests.map((b) => [b.exerciseId, { weight: b._max.weight ?? 0, reps: b._max.reps ?? 0 }]),
+  );
 
   const newPRs: string[] = [];
   const prExerciseNames: string[] = [];
   const prSideEffects: Promise<unknown>[] = [];
   for (const we of workout.exercises) {
-    const best = we.sets
-      .filter((s) => s.completed && s.weight > 0)
-      .sort((a, b) => b.weight - a.weight)[0];
+    const noWeight = we.exercise.noWeight;
+    const done = we.sets.filter((s) => s.completed && (noWeight ? s.reps > 0 : s.weight > 0));
+    const best = noWeight
+      ? done.sort((a, b) => b.reps - a.reps)[0]
+      : done.sort((a, b) => b.weight - a.weight)[0];
     if (!best) continue;
+    const previous = bestByExercise.get(we.exerciseId);
+    const isBetter = previous
+      ? noWeight
+        ? best.reps > previous.reps
+        : best.weight > previous.weight
+      : false;
 
-    if (!bestByExercise.has(we.exerciseId)) {
+    if (!previous) {
       // Primera vez con este ejercicio: se guarda como marca inicial SILENCIOSA
       // (sin puntos, sin feed, sin avisos). Los PRs empiezan a contar desde aquí.
       prSideEffects.push(
@@ -80,8 +91,9 @@ export async function finishWorkout(
           },
         }),
       );
-    } else if (best.weight > (bestByExercise.get(we.exerciseId) ?? 0)) {
-      newPRs.push(`${we.exercise.name}: ${best.weight} kg`); // solo lo ve el propio usuario
+    } else if (isBetter) {
+      // solo lo ve el propio usuario
+      newPRs.push(`${we.exercise.name}: ${noWeight ? `${best.reps} reps` : `${best.weight} kg`}`);
       prSideEffects.push(
         db.personalRecord.create({
           data: {

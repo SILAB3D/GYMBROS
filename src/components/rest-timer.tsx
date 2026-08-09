@@ -1,130 +1,47 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Timer, X, Volume2, VolumeX } from "lucide-react";
+import { useEffect } from "react";
+import { Timer, X, Volume2, VolumeX, BellRing } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useRestTimer } from "@/components/rest-timer-provider";
 
 /**
- * Temporizador de descanso.
- * - La cuenta atrás se calcula desde una marca de tiempo objetivo, así que es
- *   exacta aunque la pestaña quede en segundo plano o la pantalla se apague.
- * - El pitido se programa en el reloj del AudioContext (osc.start en el tiempo
- *   futuro), lo que permite que suene por los auriculares incluso con la app en
- *   segundo plano en muchos navegadores.
- * - Wake Lock opcional para mantener la pantalla encendida.
+ * Temporizador de descanso (versión completa, dentro del entreno activo).
+ * Todo el estado vive en <RestTimerProvider>, así que cambiar de pestaña o de
+ * página no lo reinicia. Mientras este componente esté en pantalla, el banner
+ * flotante se oculta para no duplicar la información.
  */
 export function RestTimer() {
-  const [targetAt, setTargetAt] = useState<number | null>(null);
-  const [totalMs, setTotalMs] = useState(0);
-  const [remaining, setRemaining] = useState(0);
-  const [soundOn, setSoundOn] = useState(true);
-  const [keepAwake, setKeepAwake] = useState(false);
+  const {
+    running, ringing, remaining, progress, soundOn, keepAwake,
+    setSoundOn, setKeepAwake, start, stop, dismiss, registerInline,
+  } = useRestTimer();
 
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const scheduledRef = useRef<{ osc: OscillatorNode; gain: GainNode } | null>(null);
-  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  useEffect(() => registerInline(), [registerInline]);
 
-  // Bucle de refresco visual (rAF-lite): recalcula lo que queda desde el objetivo
-  useEffect(() => {
-    if (targetAt === null) return;
-    let raf: number;
-    const tick = () => {
-      const left = Math.max(0, targetAt - Date.now());
-      setRemaining(left);
-      if (left <= 0) {
-        setTargetAt(null);
-        releaseWakeLock();
-        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-        return;
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [targetAt]);
-
-  useEffect(() => () => releaseWakeLock(), []);
-
-  async function requestWakeLock() {
-    try {
-      if ("wakeLock" in navigator) {
-        wakeLockRef.current = await (navigator as Navigator & {
-          wakeLock: { request: (t: "screen") => Promise<WakeLockSentinel> };
-        }).wakeLock.request("screen");
-      }
-    } catch {
-      /* el navegador puede rechazarlo; no es crítico */
-    }
-  }
-  function releaseWakeLock() {
-    wakeLockRef.current?.release().catch(() => undefined);
-    wakeLockRef.current = null;
-  }
-
-  function scheduleBeep(seconds: number) {
-    if (!soundOn) return;
-    try {
-      const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      const ctx = audioCtxRef.current ?? new Ctx();
-      audioCtxRef.current = ctx;
-      void ctx.resume();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = "sine";
-      const at = ctx.currentTime + seconds;
-      // Triple pitido al terminar
-      osc.frequency.setValueAtTime(880, at);
-      gain.gain.setValueAtTime(0, at);
-      for (let i = 0; i < 3; i++) {
-        const t = at + i * 0.22;
-        gain.gain.setValueAtTime(0.001, t);
-        gain.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-      }
-      osc.start(at);
-      osc.stop(at + 0.7);
-      scheduledRef.current = { osc, gain };
-    } catch {
-      /* sin audio disponible */
-    }
-  }
-
-  function start(minutes: number) {
-    cancelBeep();
-    const ms = minutes * 60 * 1000;
-    setTotalMs(ms);
-    setRemaining(ms);
-    setTargetAt(Date.now() + ms);
-    scheduleBeep(minutes * 60);
-    if (keepAwake) void requestWakeLock();
-  }
-
-  function cancelBeep() {
-    if (scheduledRef.current) {
-      try {
-        scheduledRef.current.osc.stop();
-      } catch {
-        /* ya detenido */
-      }
-      scheduledRef.current = null;
-    }
-  }
-
-  function stop() {
-    cancelBeep();
-    setTargetAt(null);
-    releaseWakeLock();
-  }
-
-  const running = targetAt !== null;
   const secs = Math.ceil(remaining / 1000);
   const mm = Math.floor(secs / 60);
   const ss = secs % 60;
-  const progress = totalMs > 0 ? remaining / totalMs : 0;
   const R = 34;
   const CIRC = 2 * Math.PI * R;
+
+  if (ringing) {
+    return (
+      <div className="flex animate-pulse items-center gap-4 rounded-2xl border border-red-500/60 bg-red-500/15 p-3">
+        <BellRing className="h-8 w-8 shrink-0 text-red-400" />
+        <div className="flex-1">
+          <p className="text-sm font-semibold">¡Descanso terminado!</p>
+          <p className="text-xs text-muted">A por la siguiente serie 💪</p>
+        </div>
+        <button
+          onClick={dismiss}
+          className="rounded-xl bg-red-500/20 px-3 py-2 text-sm font-semibold text-red-200 transition hover:bg-red-500/30"
+        >
+          Vale
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-2xl border border-border bg-surface p-3">
@@ -133,13 +50,15 @@ export function RestTimer() {
           <div className="relative h-20 w-20 shrink-0">
             <svg viewBox="0 0 80 80" className="h-20 w-20 -rotate-90">
               <circle cx="40" cy="40" r={R} fill="none" stroke="hsl(var(--surface-2))" strokeWidth="6" />
+              {/* Sin transición CSS: el valor ya se actualiza en cada frame. Con
+                  una transición, los descansos largos avanzaban tan poco por
+                  frame que el anillo parecía congelado. */}
               <circle
                 cx="40" cy="40" r={R} fill="none"
                 stroke={secs <= 5 ? "#ef4444" : "hsl(var(--accent))"}
                 strokeWidth="6" strokeLinecap="round"
                 strokeDasharray={CIRC}
                 strokeDashoffset={CIRC * (1 - progress)}
-                style={{ transition: "stroke-dashoffset 0.25s linear" }}
               />
             </svg>
             <span
@@ -154,7 +73,8 @@ export function RestTimer() {
           <div className="flex-1">
             <p className="text-sm font-medium">Descansando…</p>
             <p className="text-xs text-muted">
-              {keepAwake ? "Pantalla activa · " : ""}{soundOn ? "sonará al terminar 🔔" : "sin sonido"}
+              {keepAwake ? "Pantalla activa · " : ""}
+              {soundOn ? "sonará al terminar 🔔" : "sin sonido"}
             </p>
           </div>
           <button onClick={stop} className="rounded-xl p-2 text-muted transition hover:text-fg" aria-label="Cancelar">
@@ -168,7 +88,7 @@ export function RestTimer() {
             <span className="text-sm text-muted">Descanso</span>
             <div className="ml-auto flex gap-1">
               <button
-                onClick={() => setSoundOn((v) => !v)}
+                onClick={() => setSoundOn(!soundOn)}
                 title={soundOn ? "Silenciar" : "Activar sonido"}
                 className={cn("rounded-lg p-1.5 transition", soundOn ? "text-accent" : "text-muted hover:text-fg")}
               >

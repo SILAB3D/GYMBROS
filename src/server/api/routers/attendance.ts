@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
-  startOfMonth, endOfMonth, startOfYear, startOfISOWeek, endOfISOWeek, startOfDay, differenceInMinutes, format,
+  startOfMonth, endOfMonth, startOfYear, startOfISOWeek, endOfISOWeek, startOfDay, endOfDay,
+  differenceInMinutes, format,
 } from "date-fns";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
-import { registerAttendance, recomputeStreak } from "@/server/services/attendance-service";
-import { effectiveWeekStreak } from "@/server/services/streak";
+import { registerAttendance, deleteTrainingDay } from "@/server/services/attendance-service";
+import { weekStreakState } from "@/server/services/streak";
 
 const DEFAULT_ESTIMATED_MIN = 60;
 
@@ -36,25 +37,44 @@ export const attendanceRouter = createTRPCRouter({
       });
     }),
 
-  // Borrar un día entrenado: quita sus puntos de asistencia y recalcula la racha
+  // Detalle de un día: asistencia y entrenos registrados (para el historial)
+  day: protectedProcedure
+    .input(z.object({ date: z.date() }))
+    .query(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+      const date = startOfDay(input.date);
+      const [attendance, workouts] = await Promise.all([
+        ctx.db.attendance.findUnique({ where: { userId_date: { userId, date } } }),
+        ctx.db.workout.findMany({
+          where: { userId, startedAt: { gte: date, lte: endOfDay(input.date) } },
+          include: {
+            routine: true,
+            exercises: {
+              orderBy: { order: "asc" },
+              include: { exercise: true, sets: { orderBy: { setNumber: "asc" } } },
+            },
+          },
+          orderBy: { startedAt: "asc" },
+        }),
+      ]);
+      return { date, attendance, workouts };
+    }),
+
+  // Borrar un día entrenado: elimina el entreno y todo lo que generó
+  // (puntos, PRs automáticos y feed) y recalcula la racha.
   deleteDay: protectedProcedure
     .input(z.object({ date: z.date() }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const date = startOfDay(input.date);
-      const attendance = await ctx.db.attendance.findUnique({
-        where: { userId_date: { userId, date } },
-      });
-      if (!attendance) throw new TRPCError({ code: "NOT_FOUND" });
-      await ctx.db.$transaction([
-        ctx.db.attendance.delete({ where: { id: attendance.id } }),
-        // Quitar los puntos de asistencia otorgados ese día
-        ctx.db.pointEvent.deleteMany({
-          where: { userId, type: "ATTENDANCE", meta: { path: ["date"], equals: date.toISOString() } },
+      const [attendance, workoutCount] = await Promise.all([
+        ctx.db.attendance.findUnique({ where: { userId_date: { userId, date } } }),
+        ctx.db.workout.count({
+          where: { userId, startedAt: { gte: date, lte: endOfDay(input.date) } },
         }),
       ]);
-      await recomputeStreak(ctx.db, userId);
-      return { ok: true };
+      if (!attendance && workoutCount === 0) throw new TRPCError({ code: "NOT_FOUND" });
+      return deleteTrainingDay(ctx.db, userId, input.date);
     }),
 
   // Días del mes del propio usuario, con marca de "entreno corto" (<50% de lo estimado)
@@ -132,8 +152,19 @@ export const attendanceRouter = createTRPCRouter({
       monthlyAvg = Math.round((total / days) * 30 * 10) / 10;
     }
 
+    const streak = weekStreakState({
+      currentStreak: user.currentStreak,
+      lastCompletedWeek: user.lastCompletedWeek,
+      weeklyTargetDays: user.weeklyTargetDays,
+      weekCount: thisWeek,
+      now,
+    });
+
     return {
-      currentStreak: effectiveWeekStreak(user.currentStreak, user.lastCompletedWeek),
+      currentStreak: streak.streak,
+      streakAtRisk: streak.atRisk,
+      streakMissing: streak.missing,
+      streakDaysLeft: streak.daysLeft,
       bestStreak: user.bestStreak,
       weeklyTargetDays: user.weeklyTargetDays,
       thisWeek, thisMonth, thisYear, total, weeklyAvg, monthlyAvg,

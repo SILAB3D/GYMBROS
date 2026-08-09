@@ -1,16 +1,20 @@
 /* Service worker de GymBros: notificaciones push + modo offline. */
 
-const CACHE = "gymbros-v1";
-const STATIC = "gymbros-static-v1";
+const CACHE = "gymbros-v2";
+const STATIC = "gymbros-static-v2";
 const DATA = "gymbros-data-v1";
 const OFFLINE_URL = "/panel";
 
 // Precarga del núcleo de la app para que arranque sin conexión
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((c) =>
-      c.addAll(["/", "/panel", "/entrenamiento", "/comunidad", "/manifest.json"]).catch(() => undefined),
-    ),
+    Promise.all([
+      caches.open(CACHE).then((c) =>
+        c.addAll(["/", "/panel", "/entrenamiento", "/comunidad", "/manifest.json"]).catch(() => undefined),
+      ),
+      // La alarma del temporizador debe estar lista aunque no haya red
+      caches.open(STATIC).then((c) => c.add("/timer-alarm.wav").catch(() => undefined)),
+    ]),
   );
   self.skipWaiting();
 });
@@ -29,7 +33,7 @@ self.addEventListener("activate", (event) => {
 });
 
 function isStaticAsset(url) {
-  return url.pathname.startsWith("/_next/static") || /\.(png|jpg|jpeg|svg|webp|ico|woff2?)$/.test(url.pathname);
+  return url.pathname.startsWith("/_next/static") || /\.(png|jpg|jpeg|svg|webp|ico|woff2?|wav|mp3|m4a)$/.test(url.pathname);
 }
 
 self.addEventListener("fetch", (event) => {

@@ -130,7 +130,7 @@ export function PlanView() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h1 className="text-2xl font-bold">Mi plan de entrenamiento</h1>
+        <h2 className="text-xl font-bold">Mi plan de entrenamiento</h2>
         <p className="text-sm text-muted">
           Tus rutinas aparecen según sus «veces por semana»; tú solo las ordenas.
         </p>

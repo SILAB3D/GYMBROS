@@ -147,22 +147,33 @@ export default function ActiveWorkoutPage() {
         </p>
       )}
 
-      {workout.exercises.map((we) => (
+      {workout.exercises.map((we) => {
+        // Los ejercicios sin peso solo piden repeticiones: la columna de kg sobra
+        const noWeight = we.exercise.noWeight;
+        const cols = noWeight
+          ? "grid-cols-[2rem_1fr_2.5rem]"
+          : "grid-cols-[2rem_1fr_1fr_2.5rem]";
+        return (
         <Card key={we.id} className="space-y-2">
-          <p className="font-semibold">{we.exercise.name}</p>
-          <div className="grid grid-cols-[2rem_1fr_1fr_2.5rem] items-center gap-2 text-xs uppercase text-muted">
-            <span>#</span><span>Peso (kg)</span><span>Reps</span><span />
+          <p className="font-semibold">
+            {we.exercise.name}
+            {noWeight && <span className="ml-2 text-xs font-normal text-muted">sin peso</span>}
+          </p>
+          <div className={cn("grid items-center gap-2 text-xs uppercase text-muted", cols)}>
+            <span>#</span>{!noWeight && <span>Peso (kg)</span>}<span>Reps</span><span />
           </div>
           {we.sets.map((s) => (
-            <div key={s.id} className="grid grid-cols-[2rem_1fr_1fr_2.5rem] items-center gap-2">
+            <div key={s.id} className={cn("grid items-center gap-2", cols)}>
               <span className="text-sm text-muted">{s.setNumber}</span>
-              <Input
-                type="number" min={0} step="0.5" defaultValue={s.weight || ""}
-                placeholder="0"
-                disabled={locked}
-                className={cn(!s.touched && "italic text-muted", locked && "opacity-60")}
-                onBlur={(e) => updateSet.mutate({ setId: s.id, weight: +e.target.value || 0 })}
-              />
+              {!noWeight && (
+                <Input
+                  type="number" min={0} step="0.5" defaultValue={s.weight || ""}
+                  placeholder="0"
+                  disabled={locked}
+                  className={cn(!s.touched && "italic text-muted", locked && "opacity-60")}
+                  onBlur={(e) => updateSet.mutate({ setId: s.id, weight: +e.target.value || 0 })}
+                />
+              )}
               <Input
                 type="number" min={0} defaultValue={s.reps || ""}
                 placeholder="0"
@@ -187,7 +198,8 @@ export default function ActiveWorkoutPage() {
             </Button>
           )}
         </Card>
-      ))}
+        );
+      })}
 
       <div className="flex gap-2">
         <Button size="lg" className="flex-1" onClick={() => setFinishOpen(true)}>
@@ -242,6 +254,7 @@ export default function ActiveWorkoutPage() {
                     className="rounded-lg bg-surface-2 px-2.5 py-1.5 text-sm hover:bg-accent/20"
                   >
                     {ex.name}
+                    {ex.noWeight && <span className="ml-1 text-xs text-muted">· sin peso</span>}
                   </button>
                 ))}
               </div>

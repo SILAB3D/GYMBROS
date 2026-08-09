@@ -1,7 +1,7 @@
 import { startOfDay, startOfISOWeek, endOfISOWeek, startOfMonth, endOfMonth } from "date-fns";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { autoCloseStaleWorkouts } from "@/server/services/workout-service";
-import { effectiveWeekStreak } from "@/server/services/streak";
+import { weekStreakState } from "@/server/services/streak";
 import { reconcilePlan } from "@/server/services/plan-service";
 import { seasonAt } from "@/server/services/season";
 
@@ -137,8 +137,23 @@ export const dashboardRouter = createTRPCRouter({
           })()
         : null;
 
+    const streak = weekStreakState({
+      currentStreak: user.currentStreak,
+      lastCompletedWeek: user.lastCompletedWeek,
+      weeklyTargetDays: user.weeklyTargetDays,
+      weekCount: weekAttendances,
+      now,
+    });
+
     return {
-      user: { ...user, currentStreak: effectiveWeekStreak(user.currentStreak, user.lastCompletedWeek) },
+      user: { ...user, currentStreak: streak.streak },
+      streak: {
+        atRisk: streak.atRisk,
+        lost: streak.lost,
+        missing: streak.missing,
+        daysLeft: streak.daysLeft,
+        bestStreak: user.bestStreak,
+      },
       plan,
       todayAttendance,
       lastAttendance,

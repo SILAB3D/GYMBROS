@@ -1,6 +1,13 @@
 import type { PrismaClient, PointType } from "@prisma/client";
-import { startOfDay, startOfISOWeek, endOfISOWeek, subWeeks, isSameDay, format } from "date-fns";
+import {
+  startOfDay, endOfDay, addDays, startOfISOWeek, endOfISOWeek, subWeeks, isSameDay, format,
+} from "date-fns";
 import { awardPoints, addFeed, notify, checkAchievements } from "./gamification";
+
+/** Tipos de punto ligados a cumplir una semana de racha. */
+const STREAK_POINT_TYPES: PointType[] = [
+  "STREAK_WEEK1", "STREAK_WEEK2", "STREAK_WEEK3", "STREAK_MONTH", "STREAK_CRACK",
+];
 
 /** Nivel de recompensa según las semanas consecutivas cumplidas. */
 function streakLevel(weeks: number): { type: PointType; title: string } {
@@ -69,6 +76,9 @@ export async function registerAttendance(
             currentStreak: weekStreak,
             bestStreak: Math.max(user.bestStreak, weekStreak),
             lastCompletedWeek: weekStart,
+            // Semana salvada: los avisos vuelven a quedar disponibles
+            streakWarnedWeek: null,
+            streakLostWeek: null,
           },
         });
 
@@ -128,6 +138,9 @@ export async function recomputeStreak(db: PrismaClient, userId: string): Promise
     .map(([k]) => k)
     .sort((a, b) => a - b);
 
+  // Retirar los puntos de racha de semanas que ya no están cumplidas
+  await purgeStreakPoints(db, userId, new Set(completedWeeks.map((k) => format(new Date(k), "yyyy-MM-dd"))));
+
   // Mejor racha = tramo más largo de semanas consecutivas cumplidas
   let best = 0;
   let current = 0;
@@ -151,6 +164,92 @@ export async function recomputeStreak(db: PrismaClient, userId: string): Promise
       bestStreak: best,
       lastCompletedWeek: lastCompleted ? new Date(lastCompleted) : null,
       lastAttendanceDate: lastDate,
+      // Los avisos de racha vuelven a estar disponibles tras recalcular
+      streakWarnedWeek: null,
+      streakLostWeek: null,
     },
   });
+}
+
+/** Borra los puntos de racha cuyas semanas ya no están cumplidas. */
+async function purgeStreakPoints(db: PrismaClient, userId: string, keepWeeks: Set<string>) {
+  const events = await db.pointEvent.findMany({
+    where: { userId, type: { in: STREAK_POINT_TYPES } },
+    select: { id: true, meta: true },
+  });
+  const stale = events
+    .filter((e) => {
+      const week = (e.meta as { week?: string } | null)?.week;
+      return !week || !keepWeeks.has(week);
+    })
+    .map((e) => e.id);
+  if (stale.length > 0) await db.pointEvent.deleteMany({ where: { id: { in: stale } } });
+}
+
+/**
+ * Borra por completo un día de entrenamiento: la asistencia, los entrenos de
+ * ese día y TODO lo que generaron (puntos de asistencia, de entreno completado
+ * y de PR, los PRs autodetectados y las publicaciones del feed). Después
+ * recalcula la racha, lo que a su vez retira los puntos de las semanas que
+ * dejan de estar cumplidas.
+ */
+export async function deleteTrainingDay(db: PrismaClient, userId: string, rawDate: Date) {
+  const date = startOfDay(rawDate);
+  const dayEnd = endOfDay(rawDate);
+  // Un entreno cerrado automáticamente puede registrar sus puntos ya de
+  // madrugada del día siguiente: se da un día de margen al buscarlos.
+  const pointsUntil = addDays(dayEnd, 1);
+
+  const [workouts, autoPRs] = await Promise.all([
+    db.workout.findMany({
+      where: { userId, startedAt: { gte: date, lte: dayEnd } },
+      select: { id: true },
+    }),
+    db.personalRecord.findMany({
+      where: { userId, isAuto: true, date: { gte: date, lte: dayEnd } },
+      select: { id: true, exerciseId: true, weight: true },
+    }),
+  ]);
+
+  // Puntos de asistencia del día
+  await db.pointEvent.deleteMany({
+    where: { userId, type: "ATTENDANCE", meta: { path: ["date"], equals: date.toISOString() } },
+  });
+  // Puntos de cada entreno completado
+  for (const w of workouts) {
+    await db.pointEvent.deleteMany({
+      where: { userId, type: "WORKOUT_COMPLETED", meta: { path: ["workoutId"], equals: w.id } },
+    });
+  }
+  // Puntos de los PRs detectados en esos entrenos (los PRs añadidos a mano se respetan)
+  for (const pr of autoPRs) {
+    await db.pointEvent.deleteMany({
+      where: {
+        userId,
+        type: "NEW_PR",
+        date: { gte: date, lte: pointsUntil },
+        AND: [
+          { meta: { path: ["exerciseId"], equals: pr.exerciseId } },
+          { meta: { path: ["weight"], equals: pr.weight } },
+        ],
+      },
+    });
+  }
+
+  await db.$transaction([
+    db.personalRecord.deleteMany({ where: { id: { in: autoPRs.map((p) => p.id) } } }),
+    db.workout.deleteMany({ where: { id: { in: workouts.map((w) => w.id) } } }),
+    db.attendance.deleteMany({ where: { userId, date } }),
+    // Publicaciones del feed generadas ese día por el entreno, los PRs o la racha
+    db.feedItem.deleteMany({
+      where: {
+        userId,
+        type: { in: ["WORKOUT", "PR", "STREAK"] },
+        createdAt: { gte: date, lte: pointsUntil },
+      },
+    }),
+  ]);
+
+  await recomputeStreak(db, userId);
+  return { deletedWorkouts: workouts.length, deletedPRs: autoPRs.length };
 }

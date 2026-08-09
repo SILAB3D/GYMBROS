@@ -35,6 +35,11 @@ model User {
   lastCompletedWeek  DateTime? // lunes (ISO) de la última semana cumplida
   lastAttendanceDate DateTime?
 
+  // Semanas (lunes ISO) en las que ya se avisó de racha en peligro / perdida,
+  // para no repetir el aviso cada día.
+  streakWarnedWeek DateTime?
+  streakLostWeek   DateTime?
+
   notifyPrefs Json @default("{}")
 
   // Posición actual dentro del plan de entrenamiento (índice del siguiente slot)
@@ -95,6 +100,9 @@ model Exercise {
   id          String      @id @default(cuid())
   name        String
   muscleGroup MuscleGroup
+  // El ejercicio no se hace con peso (dominadas, plancha, cardio…): en el
+  // entreno solo se piden repeticiones y el progreso se mide en reps.
+  noWeight    Boolean     @default(false)
   createdById String? // null = catálogo global
   createdBy   User?       @relation("CustomExercises", fields: [createdById], references: [id], onDelete: Cascade)
 

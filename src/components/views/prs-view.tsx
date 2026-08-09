@@ -57,6 +57,9 @@ export function PRsView() {
 
   if (isLoading) return <Spinner />;
 
+  // Los ejercicios sin peso registran el récord en repeticiones
+  const formNoWeight = catalog?.find((ex) => ex.id === form.exerciseId)?.noWeight ?? false;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -85,9 +88,12 @@ export function PRsView() {
                 >
                   <Card className="transition hover:border-accent/40">
                     <p className="text-sm text-muted">{pr.exercise.name}</p>
-                    <p className="text-2xl font-bold text-accent">{pr.weight} kg</p>
+                    <p className="text-2xl font-bold text-accent">
+                      {pr.exercise.noWeight ? `${pr.reps} reps` : `${pr.weight} kg`}
+                    </p>
                     <p className="text-xs text-muted">
-                      × {pr.reps} · {format(pr.date, "d MMM yyyy", { locale: es })}
+                      {pr.exercise.noWeight ? "" : `× ${pr.reps} · `}
+                      {format(pr.date, "d MMM yyyy", { locale: es })}
                     </p>
                   </Card>
                 </button>
@@ -103,7 +109,7 @@ export function PRsView() {
               <PrHistoryChart
                 data={(history ?? []).map((h) => ({
                   fecha: format(h.date, "d MMM", { locale: es }),
-                  peso: h.weight,
+                  peso: h.exercise.noWeight ? h.reps : h.weight,
                 }))}
               />
             </Card>
@@ -118,7 +124,8 @@ export function PRsView() {
                     <Trophy className="h-4 w-4 text-gold" />
                     <div>
                       <p className="text-sm font-medium">
-                        {pr.exercise.name} · {pr.weight} kg × {pr.reps}
+                        {pr.exercise.name} ·{" "}
+                        {pr.exercise.noWeight ? `${pr.reps} reps` : `${pr.weight} kg × ${pr.reps}`}
                       </p>
                       <p className="text-xs text-muted">
                         {format(pr.date, "d MMM yyyy", { locale: es })}
@@ -153,16 +160,20 @@ export function PRsView() {
             >
               <option value="">Selecciona…</option>
               {catalog?.map((ex) => (
-                <option key={ex.id} value={ex.id}>{ex.name}</option>
+                <option key={ex.id} value={ex.id}>
+                  {ex.name}{ex.noWeight ? " (sin peso)" : ""}
+                </option>
               ))}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>Peso (kg)</Label>
-              <Input type="number" min={0} step="0.5" value={form.weight}
-                onChange={(e) => setForm((f) => ({ ...f, weight: e.target.value }))} />
-            </div>
+          <div className={formNoWeight ? "" : "grid grid-cols-2 gap-3"}>
+            {!formNoWeight && (
+              <div>
+                <Label>Peso (kg)</Label>
+                <Input type="number" min={0} step="0.5" value={form.weight}
+                  onChange={(e) => setForm((f) => ({ ...f, weight: e.target.value }))} />
+              </div>
+            )}
             <div>
               <Label>Repeticiones</Label>
               <Input type="number" min={1} value={form.reps}
@@ -176,12 +187,12 @@ export function PRsView() {
           </div>
           <Button
             size="lg" className="w-full"
-            disabled={!form.exerciseId || !form.weight}
+            disabled={!form.exerciseId || (formNoWeight ? !form.reps : !form.weight)}
             loading={create.isLoading}
             onClick={() =>
               create.mutate({
                 exerciseId: form.exerciseId,
-                weight: +form.weight,
+                weight: formNoWeight ? 0 : +form.weight,
                 reps: +form.reps || 1,
                 notes: form.notes || undefined,
               })

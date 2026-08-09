@@ -35,3 +35,35 @@ body {
 .scrollbar-none {
   scrollbar-width: none;
 }
+
+/* Campos de fecha y hora: WebKit centra el texto y reserva un hueco extra para
+   su icono, lo que desplazaba el contenido hacia la derecha respecto al resto
+   de campos. Aquí se alinea a la izquierda y se recupera el espacio. */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+input[type="month"] {
+  -webkit-appearance: none;
+  appearance: none;
+  text-align: left;
+  min-height: 2.5rem;
+}
+input[type="date"]::-webkit-date-and-time-value,
+input[type="time"]::-webkit-date-and-time-value,
+input[type="datetime-local"]::-webkit-date-and-time-value,
+input[type="month"]::-webkit-date-and-time-value {
+  text-align: left;
+  margin: 0;
+}
+input[type="date"]::-webkit-datetime-edit,
+input[type="time"]::-webkit-datetime-edit,
+input[type="datetime-local"]::-webkit-datetime-edit,
+input[type="month"]::-webkit-datetime-edit {
+  padding: 0;
+}
+input[type="date"]::-webkit-calendar-picker-indicator {
+  margin-left: auto;
+  cursor: pointer;
+  opacity: 0.6;
+  filter: invert(1);
+}

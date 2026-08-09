@@ -4,7 +4,7 @@ import {
   subWeeks, subMonths, subYears,
 } from "date-fns";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
-import { effectiveWeekStreak } from "@/server/services/streak";
+import { streaksForUsers } from "@/server/services/streak";
 import { seasonAt, seasonRange, SEASON_ANCHOR } from "@/server/services/season";
 
 type Period = "week" | "month" | "season" | "year";
@@ -65,18 +65,22 @@ export const rankingRouter = createTRPCRouter({
 
       const [users, currentRanking, previousRanking] = await Promise.all([
         ctx.db.user.findMany({
-          select: { id: true, name: true, avatarUrl: true, currentStreak: true, lastCompletedWeek: true },
+          select: {
+            id: true, name: true, avatarUrl: true,
+            currentStreak: true, lastCompletedWeek: true, weeklyTargetDays: true,
+          },
         }),
         computeRanking(ctx.db, current.from, current.to),
         computeRanking(ctx.db, previous.from, previous.to),
       ]);
+      const streaks = await streaksForUsers(ctx.db, users);
 
       const prevPos = new Map(previousRanking.map((r, i) => [r.userId, i + 1]));
       const pointsByUser = new Map(currentRanking.map((r) => [r.userId, r.points]));
 
       const rows = users
-        .map(({ lastCompletedWeek, ...u }) => ({
-          user: { ...u, currentStreak: effectiveWeekStreak(u.currentStreak, lastCompletedWeek) },
+        .map(({ lastCompletedWeek, weeklyTargetDays, ...u }) => ({
+          user: { ...u, currentStreak: streaks.get(u.id) ?? 0 },
           points: pointsByUser.get(u.id) ?? 0,
         }))
         .sort((a, b) => b.points - a.points)
