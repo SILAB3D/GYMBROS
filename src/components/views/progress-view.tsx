@@ -37,23 +37,6 @@ const STYLES: Record<Direction, { card: string; text: string; label: string; ico
   },
 };
 
-/** Mini gráfica de barras del volumen de las últimas sesiones. */
-function Sparkline({ values, className }: { values: number[]; className?: string }) {
-  if (values.length === 0) return <div className="h-6" />;
-  const max = Math.max(...values, 1);
-  return (
-    <div className="flex h-6 items-end gap-[2px]">
-      {values.map((v, i) => (
-        <span
-          key={i}
-          className={cn("w-full rounded-sm bg-current opacity-70", className)}
-          style={{ height: `${Math.max(8, (v / max) * 100)}%` }}
-        />
-      ))}
-    </div>
-  );
-}
-
 const nf = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 0 });
 
 /**
@@ -117,6 +100,10 @@ export function ProgressView() {
             const style = STYLES[ex.direction as Direction];
             const Icon = style.icon;
             const pct = ex.changePct;
+            // Una sola barra fina: cuánto queda del récord de volumen de este
+            // ejercicio. Ocupa 4 px y dice de un vistazo si la última sesión
+            // anda cerca de tu mejor marca o muy por debajo.
+            const ofBest = ex.last !== null && ex.best ? Math.min(100, (ex.last / ex.best) * 100) : 0;
             return (
               <div
                 key={ex.id}
@@ -141,8 +128,18 @@ export function ProgressView() {
                   </span>
                 </div>
 
-                <div className={style.text}>
-                  <Sparkline values={ex.spark} />
+                <div
+                  className="h-1 w-full overflow-hidden rounded-full bg-black/25"
+                  title={
+                    ex.best
+                      ? `${ofBest.toFixed(0)}% de tu récord (${nf.format(ex.best)} ${ex.unit === "kg" ? "kg" : "reps"})`
+                      : undefined
+                  }
+                >
+                  <div
+                    className={cn("h-full rounded-full bg-current", style.text)}
+                    style={{ width: `${ofBest}%` }}
+                  />
                 </div>
 
                 <p className="truncate text-[10px] text-muted">
@@ -158,7 +155,8 @@ export function ProgressView() {
       <Card className="py-3 text-xs text-muted">
         El volumen de una sesión son los kg levantados (peso × repeticiones de las series
         completadas). En los ejercicios marcados como «sin peso» se cuentan las repeticiones
-        totales. Hacen falta al menos 2 sesiones para calcular una tendencia.
+        totales. La barra fina indica cuánto se acerca la última sesión a tu récord de volumen
+        en ese ejercicio. Hacen falta al menos 2 sesiones para calcular una tendencia.
       </Card>
     </div>
   );

@@ -100,8 +100,6 @@ export const statsRouter = createTRPCRouter({
           last: volumes.at(-1) ?? null,
           best: volumes.length > 0 ? Math.max(...volumes) : null,
           lastDate: sessions.at(-1)?.date ?? null,
-          // Solo se dibujan las últimas 10 sesiones en la mini gráfica
-          spark: volumes.slice(-10),
           direction,
           changePct,
         };
