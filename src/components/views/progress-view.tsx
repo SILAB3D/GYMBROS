@@ -18,8 +18,8 @@ const STYLES: Record<Direction, { card: string; text: string; label: string; ico
     icon: TrendingUp,
   },
   flat: {
-    card: "border-red-500/40 bg-red-500/10",
-    text: "text-red-400",
+    card: "border-amber-400/50 bg-amber-400/10",
+    text: "text-amber-400",
     label: "Estancado",
     icon: Minus,
   },
@@ -39,10 +39,10 @@ const STYLES: Record<Direction, { card: string; text: string; label: string; ico
 
 /** Mini gráfica de barras del volumen de las últimas sesiones. */
 function Sparkline({ values, className }: { values: number[]; className?: string }) {
-  if (values.length === 0) return <div className="h-8" />;
+  if (values.length === 0) return <div className="h-6" />;
   const max = Math.max(...values, 1);
   return (
-    <div className="flex h-8 items-end gap-[3px]">
+    <div className="flex h-6 items-end gap-[2px]">
       {values.map((v, i) => (
         <span
           key={i}
@@ -86,7 +86,8 @@ export function ProgressView() {
         <p className="text-sm text-muted">
           Volumen de las 3 últimas sesiones frente a las 3 anteriores.{" "}
           <span className="text-accent">Verde</span> si subes,{" "}
-          <span className="text-red-400">rojo</span> si te estancas o bajas.
+          <span className="text-amber-400">ámbar</span> si te estancas,{" "}
+          <span className="text-red-400">rojo</span> si retrocedes.
         </p>
       </div>
 
@@ -111,7 +112,7 @@ export function ProgressView() {
       {routine.exercises.length === 0 ? (
         <EmptyState icon="🗒️" title="Esta rutina no tiene ejercicios" />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2">
           {routine.exercises.map((ex) => {
             const style = STYLES[ex.direction as Direction];
             const Icon = style.icon;
@@ -119,14 +120,23 @@ export function ProgressView() {
             return (
               <div
                 key={ex.id}
-                className={cn("space-y-2 rounded-2xl border p-3", style.card)}
+                className={cn("space-y-1.5 rounded-xl border p-2.5", style.card)}
+                title={
+                  ex.lastDate
+                    ? `${ex.name} · ${style.label} · última sesión el ${format(ex.lastDate, "d MMM yyyy", { locale: es })}`
+                    : `${ex.name} · ${style.label}`
+                }
               >
-                <div className="flex items-start justify-between gap-2">
-                  <p className="min-w-0 truncate text-sm font-semibold" title={ex.name}>
-                    {ex.name}
-                  </p>
-                  <span className={cn("flex shrink-0 items-center gap-1 text-xs font-bold", style.text)}>
-                    <Icon className="h-3.5 w-3.5" />
+                <p className="truncate text-xs font-semibold leading-tight">{ex.name}</p>
+
+                <div className="flex items-baseline justify-between gap-1">
+                  <span className={cn("truncate text-sm font-bold", style.text)}>
+                    {ex.last === null
+                      ? "—"
+                      : `${nf.format(ex.last)} ${ex.unit === "kg" ? "kg" : "reps"}`}
+                  </span>
+                  <span className={cn("flex shrink-0 items-center gap-0.5 text-[11px] font-bold", style.text)}>
+                    <Icon className="h-3 w-3" />
                     {pct === null ? "—" : `${pct > 0 ? "+" : ""}${pct.toFixed(0)}%`}
                   </span>
                 </div>
@@ -135,24 +145,10 @@ export function ProgressView() {
                   <Sparkline values={ex.spark} />
                 </div>
 
-                <div className="flex items-end justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className={cn("truncate text-base font-bold", style.text)}>
-                      {ex.last === null
-                        ? "sin sesiones"
-                        : `${nf.format(ex.last)} ${ex.unit === "kg" ? "kg" : "reps"}`}
-                    </p>
-                    <p className="text-[11px] text-muted">
-                      {style.label}
-                      {ex.sessions > 0 && ` · ${ex.sessions} ${ex.sessions === 1 ? "sesión" : "sesiones"}`}
-                    </p>
-                  </div>
-                  {ex.lastDate && (
-                    <p className="shrink-0 text-[11px] text-muted">
-                      {format(ex.lastDate, "d MMM", { locale: es })}
-                    </p>
-                  )}
-                </div>
+                <p className="truncate text-[10px] text-muted">
+                  {style.label}
+                  {ex.sessions > 0 && ` · ${ex.sessions} ${ex.sessions === 1 ? "sesión" : "sesiones"}`}
+                </p>
               </div>
             );
           })}
