@@ -11,17 +11,17 @@ import {
   enablePush, pushSupported, isIosBrowserTab, detectPlatform, type Platform,
 } from "@/lib/push";
 
-const SNOOZE_KEY = "gymbros-push-prompt-snooze";
-/** Si se pospone, no vuelve a preguntar en tres días. */
-const SNOOZE_MS = 3 * 24 * 60 * 60 * 1000;
 /** Se deja respirar a la pantalla de carga antes de aparecer. */
 const DELAY_MS = 2500;
 
 /**
  * Al entrar en la app comprueba el permiso de notificaciones del navegador
  * (el del dispositivo, no las categorías de Ajustes) y, si falta, lo pide con
- * un aviso. Las encuestas pendientes tienen prioridad: si hay alguna, este
- * aviso espera a otra visita.
+ * un aviso. Sale en CADA acceso mientras el permiso siga sin concederse:
+ * cerrarlo solo lo descarta para esta visita, no lo silencia.
+ *
+ * Las encuestas pendientes tienen prioridad por ser bloqueantes; en cuanto se
+ * responden, el aviso aparece sin necesidad de recargar.
  */
 export function PushPermissionGate() {
   const [open, setOpen] = useState(false);
@@ -56,9 +56,6 @@ export function PushPermissionGate() {
     setPlatform(detectPlatform());
     setIosBrowser(isIosBrowserTab());
 
-    const snoozedUntil = Number(localStorage.getItem(SNOOZE_KEY) ?? 0);
-    if (Date.now() < snoozedUntil) return;
-
     const timer = setTimeout(() => {
       void (async () => {
         // "granted" sin suscripción también cuenta: el permiso está dado pero
@@ -75,12 +72,8 @@ export function PushPermissionGate() {
     return () => clearTimeout(timer);
   }, [pollPending]);
 
-  function snooze() {
-    try {
-      localStorage.setItem(SNOOZE_KEY, String(Date.now() + SNOOZE_MS));
-    } catch {
-      /* almacenamiento no disponible */
-    }
+  /** Cierra el aviso solo para esta visita: al volver a entrar reaparece. */
+  function dismiss() {
     setOpen(false);
   }
 
@@ -94,12 +87,6 @@ export function PushPermissionGate() {
     );
     if (result.ok) {
       setDone(true);
-      // Ya está resuelto: no hace falta volver a preguntar
-      try {
-        localStorage.removeItem(SNOOZE_KEY);
-      } catch {
-        /* almacenamiento no disponible */
-      }
       setTimeout(() => setOpen(false), 1200);
     } else {
       setError(result.error);
@@ -110,22 +97,41 @@ export function PushPermissionGate() {
   }
 
   return (
-    <Modal open={open} onClose={snooze} title="Activa las notificaciones">
-      <div className="space-y-4">
-        <div className="flex items-start gap-3">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-accent/15">
-            <BellRing className="h-5 w-5 text-accent" />
-          </span>
-          <div className="space-y-1">
-            <p className="text-sm">
-              Para recibir avisos hace falta que <strong>concedas el permiso en el dispositivo</strong>.
-              Sin él, GymBros no puede notificarte nada aunque tengas todo activado dentro de la app.
-            </p>
-            <p className="text-sm text-muted">
-              Luego, desde <strong>Ajustes → Notificaciones</strong>, eliges qué avisos quieres
-              recibir y cuáles no: PRs del grupo, rachas, recordatorios, avisos del administrador…
-            </p>
+    <Modal
+      open={open}
+      onClose={dismiss}
+      title="Activa las notificaciones"
+      subtitle="Hace falta el permiso del dispositivo"
+      icon={
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/15">
+          <BellRing className="h-5 w-5 text-accent" />
+        </span>
+      }
+      footer={
+        !done && (
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Link href="/ajustes" className="flex-1" onClick={dismiss}>
+              <Button variant="secondary" className="w-full">
+                <SlidersHorizontal className="h-4 w-4" /> Ver ajustes
+              </Button>
+            </Link>
+            <Button variant="ghost" className="flex-1" onClick={dismiss}>
+              Ahora no
+            </Button>
           </div>
+        )
+      }
+    >
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <p className="text-sm">
+            Sin el permiso del navegador, GymBros no puede avisarte de nada aunque lo tengas todo
+            activado dentro de la app.
+          </p>
+          <p className="text-sm text-muted">
+            Después, desde <strong>Ajustes → Notificaciones</strong>, eliges qué avisos quieres
+            recibir y cuáles no: PRs del grupo, rachas, recordatorios, avisos del administrador…
+          </p>
         </div>
 
         {done ? (
@@ -172,19 +178,6 @@ export function PushPermissionGate() {
               </Button>
             </div>
             {showHelp && <PushHelp platform={platform} denied={denied} />}
-          </div>
-        )}
-
-        {!done && (
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Link href="/ajustes" className="flex-1" onClick={snooze}>
-              <Button variant="secondary" className="w-full">
-                <SlidersHorizontal className="h-4 w-4" /> Ver ajustes
-              </Button>
-            </Link>
-            <Button variant="ghost" className="flex-1" onClick={snooze}>
-              Ahora no
-            </Button>
           </div>
         )}
       </div>

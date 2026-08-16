@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Loader2 } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { GymLoader } from "@/components/gym-loader";
 import { forwardRef, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -181,15 +181,45 @@ export function EmptyState({
 
 // ---------- Modal ----------
 
+const MODAL_SIZES = {
+  sm: "sm:max-w-sm",
+  md: "sm:max-w-lg",
+  lg: "sm:max-w-2xl",
+} as const;
+
+/**
+ * Ventana emergente de la app. En móvil se comporta como hoja inferior y en
+ * pantallas grandes como diálogo centrado.
+ *
+ * Todas las secciones comparten el mismo margen lateral (px-5) y el mismo
+ * ritmo vertical, así que cabecera, contenido y acciones quedan alineados sin
+ * que cada pantalla tenga que inventarse sus espaciados. Solo el contenido
+ * hace scroll: la cabecera y el pie permanecen siempre a la vista.
+ */
 export function Modal({
   open,
   onClose,
   title,
+  subtitle,
+  icon,
+  footer,
+  size = "md",
+  dismissible = true,
+  placement = "sheet",
   children,
 }: {
   open: boolean;
   onClose: () => void;
   title?: string;
+  subtitle?: string;
+  icon?: React.ReactNode;
+  /** Acciones fijas al pie, separadas del contenido por una línea. */
+  footer?: React.ReactNode;
+  size?: keyof typeof MODAL_SIZES;
+  /** A false, no se cierra ni con Escape ni pulsando fuera (diálogos obligatorios). */
+  dismissible?: boolean;
+  /** "sheet": hoja inferior en móvil. "center": centrado en cualquier pantalla. */
+  placement?: "sheet" | "center";
   children: React.ReactNode;
 }) {
   const [mounted, setMounted] = useState(false);
@@ -205,21 +235,82 @@ export function Modal({
     };
   }, [open]);
 
+  // Cerrar con Escape, como cualquier diálogo del sistema
+  useEffect(() => {
+    if (!open || !dismissible) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, dismissible, onClose]);
+
   if (!open || !mounted) return null;
+
+  const hasHeader = Boolean(title || dismissible);
+  const centered = placement === "center";
 
   // Portal en <body>: si se renderizara dentro de la página, un ancestro con
   // `transform` haría que el fondo fijo no cubriera toda la pantalla.
   return createPortal(
     <div
-      className="fixed inset-0 z-[60] flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4"
-      onClick={onClose}
+      className={cn(
+        "gb-modal-overlay fixed inset-0 z-[60] flex justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4",
+        centered ? "items-center p-4" : "items-end",
+      )}
+      onClick={dismissible ? onClose : undefined}
+      role="dialog"
+      aria-modal="true"
     >
       <div
-        className="max-h-[90dvh] w-full overflow-y-auto rounded-t-2xl border border-border bg-surface p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:max-w-lg sm:rounded-2xl sm:pb-5"
+        className={cn(
+          "gb-modal-panel flex max-h-[88dvh] w-full flex-col overflow-hidden border border-border bg-surface shadow-2xl sm:rounded-2xl",
+          centered ? "gb-modal-centered rounded-2xl" : "rounded-t-2xl",
+          MODAL_SIZES[size],
+        )}
         onClick={(e) => e.stopPropagation()}
       >
-        {title && <h2 className="mb-4 text-lg font-semibold">{title}</h2>}
-        {children}
+        {/* Asa de la hoja inferior: solo tiene sentido en móvil */}
+        {!centered && (
+          <div className="flex justify-center pt-2 sm:hidden">
+            <span className="h-1 w-9 rounded-full bg-border" />
+          </div>
+        )}
+
+        {hasHeader && (
+          <div className="flex items-start gap-3 px-5 pb-4 pt-4">
+            {icon && <span className="mt-0.5 shrink-0">{icon}</span>}
+            <div className="min-w-0 flex-1 space-y-0.5">
+              {title && <h2 className="text-lg font-semibold leading-tight">{title}</h2>}
+              {subtitle && <p className="text-sm text-muted">{subtitle}</p>}
+            </div>
+            {dismissible && (
+              <button
+                onClick={onClose}
+                aria-label="Cerrar"
+                className="-mr-1.5 -mt-1 shrink-0 rounded-xl p-1.5 text-muted transition hover:bg-surface-2 hover:text-fg"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        )}
+
+        <div
+          className={cn(
+            "flex-1 overflow-y-auto px-5",
+            hasHeader ? "" : "pt-5",
+            footer ? "pb-5" : "pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:pb-5",
+          )}
+        >
+          {children}
+        </div>
+
+        {footer && (
+          <div className="border-t border-border px-5 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pb-4">
+            {footer}
+          </div>
+        )}
       </div>
     </div>,
     document.body,

@@ -9,6 +9,7 @@ import { api } from "@/trpc/react";
 import { Card, Spinner, Avatar, Stat, Badge, Button } from "@/components/ui";
 import { MonthCalendar } from "@/components/month-calendar";
 import { PointsBreakdown } from "@/components/points-breakdown";
+import { AffinityPanel } from "@/components/affinity-panel";
 
 export default function PublicProfilePage() {
   const params = useParams<{ id: string }>();
@@ -35,6 +36,15 @@ export default function PublicProfilePage() {
           </p>
         </div>
       </Card>
+
+      {/* Afinidad de entrenamiento con este miembro */}
+      <AffinityPanel
+        affinity={data.affinity}
+        detail={data.affinityDetail}
+        name={data.user.name}
+        myProfileEmpty={data.myProfileEmpty}
+        theirProfileEmpty={data.theirProfileEmpty}
+      />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat

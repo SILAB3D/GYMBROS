@@ -62,11 +62,28 @@ export function FeedbackButton() {
         <MessageSquarePlus className="h-5 w-5" />
       </button>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Feedback 💬">
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Feedback 💬"
+        subtitle={sent ? undefined : "Bugs y mejoras para el admin"}
+        footer={
+          !sent && (
+            <Button
+              className="w-full"
+              disabled={text.trim().length < 5}
+              loading={create.isLoading}
+              onClick={() => create.mutate({ text: text.trim() })}
+            >
+              Enviar
+            </Button>
+          )
+        }
+      >
         {sent ? (
           <p className="py-6 text-center text-accent">¡Gracias! Tu comentario se ha enviado ✅</p>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <p className="text-sm text-muted">
               ¿Has encontrado un bug o se te ocurre una mejora? Cuéntalo aquí y el admin lo revisará.
             </p>
@@ -78,14 +95,6 @@ export function FeedbackButton() {
               className="w-full rounded-xl border border-border bg-surface-2 p-3 text-sm text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent/60"
             />
             {create.error && <p className="text-sm text-red-400">{create.error.message}</p>}
-            <Button
-              className="w-full"
-              disabled={text.trim().length < 5}
-              loading={create.isLoading}
-              onClick={() => create.mutate({ text: text.trim() })}
-            >
-              Enviar
-            </Button>
           </div>
         )}
       </Modal>

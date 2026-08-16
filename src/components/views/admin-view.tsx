@@ -2,12 +2,60 @@
 
 import { useState } from "react";
 import { format } from "date-fns";
-import { Shield, Trash2, Megaphone, MessageSquare, Check, Undo2, BarChart3, Eye, Plus, Lock, LockOpen, MailPlus, ChevronDown, Send, Users } from "lucide-react";
+import { Shield, Trash2, Megaphone, MessageSquare, Check, Undo2, BarChart3, Eye, Plus, Lock, LockOpen, MailPlus, ChevronDown, Send, Users, Sparkles, KeyRound, BellRing, BellOff } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Input, Label, Spinner, Badge, Modal } from "@/components/ui";
 import { PollAnswerCard } from "@/components/poll-card";
 import { cn } from "@/lib/utils";
 
+
+/**
+ * Estado de las notificaciones de un miembro.
+ *
+ * El permiso del navegador no se puede consultar desde el servidor, así que se
+ * refleja lo equivalente en la práctica: si tiene algún dispositivo dado de
+ * alta. Sin ninguno no hay forma de hacerle llegar un push, tanto si nunca
+ * aceptó como si lo bloqueó o desinstaló la app.
+ */
+function PushStatus({
+  push,
+}: {
+  push: { devices: number; since: Date | null; mutedCategories: string[] };
+}) {
+  const active = push.devices > 0;
+  return (
+    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium",
+          active ? "bg-accent/15 text-accent" : "bg-red-500/15 text-red-400",
+        )}
+        title={
+          active
+            ? "Tiene al menos un dispositivo con el permiso concedido"
+            : "No ha concedido el permiso en ningún dispositivo: no recibirá ningún aviso"
+        }
+      >
+        {active ? <BellRing className="h-3 w-3" /> : <BellOff className="h-3 w-3" />}
+        {active
+          ? `Permiso concedido · ${push.devices} ${push.devices === 1 ? "dispositivo" : "dispositivos"}`
+          : "Sin permiso de notificaciones"}
+      </span>
+      {active && push.since && (
+        <span className="text-muted">desde {format(push.since, "dd/MM/yyyy")}</span>
+      )}
+      {push.mutedCategories.length > 0 && (
+        <span
+          className="text-amber-400"
+          title={`Categorías silenciadas: ${push.mutedCategories.join(", ")}`}
+        >
+          🔕 {push.mutedCategories.length}{" "}
+          {push.mutedCategories.length === 1 ? "categoría silenciada" : "categorías silenciadas"}
+        </span>
+      )}
+    </p>
+  );
+}
 
 /** Sección plegable del panel de administración (cerrada por defecto). */
 function AdminSection({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
@@ -27,6 +75,7 @@ export function AdminView() {
   const { data: users, isLoading } = api.admin.users.useQuery();
   const { data: rules } = api.admin.listRules.useQuery();
   const { data: feedbacks } = api.feedback.listAll.useQuery();
+  const { data: updateReactions } = api.update.reactions.useQuery();
 
   const [broadcast, setBroadcast] = useState({ title: "", body: "" });
   const [sent, setSent] = useState<{ sent: number; skipped: number } | null>(null);
@@ -40,6 +89,17 @@ export function AdminView() {
   });
   const setRole = api.admin.setRole.useMutation({ onSuccess: () => utils.admin.users.invalidate() });
   const deleteUser = api.admin.deleteUser.useMutation({ onSuccess: () => utils.admin.users.invalidate() });
+
+  // Enlace de rescate para quien no puede recibirlo por push. Se muestra una
+  // sola vez: el token no vuelve a estar disponible en claro.
+  const [recoverLink, setRecoverLink] = useState<{ url: string; name: string; minutes: number } | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const resetLink = api.admin.resetLink.useMutation({
+    onSuccess: (r) => {
+      setRecoverLink({ url: r.url, name: r.name, minutes: r.expiresInMinutes });
+      setLinkCopied(false);
+    },
+  });
   const setFeedbackStatus = api.feedback.setStatus.useMutation({
     onSuccess: () => utils.feedback.listAll.invalidate(),
   });
@@ -97,8 +157,17 @@ export function AdminView() {
                   {u.email} · desde {format(u.createdAt, "dd/MM/yyyy")} · {u._count.attendances} asistencias,{" "}
                   {u._count.workouts} entrenos, {u._count.personalRecords} PRs
                 </p>
+                <PushStatus push={u.push} />
               </div>
               <div className="flex gap-1.5">
+                <Button
+                  size="sm" variant="secondary"
+                  loading={resetLink.isLoading && resetLink.variables?.userId === u.id}
+                  onClick={() => resetLink.mutate({ userId: u.id })}
+                  title="Generar enlace para restablecer su contraseña"
+                >
+                  <KeyRound className="h-3.5 w-3.5" />
+                </Button>
                 <Button
                   size="sm" variant="secondary"
                   onClick={() => setRole.mutate({ userId: u.id, role: u.role === "ADMIN" ? "USER" : "ADMIN" })}
@@ -322,6 +391,31 @@ export function AdminView() {
       </AdminSection>
 
       {/* Previsualización: así la verán los miembros */}
+      <Modal
+        open={!!recoverLink}
+        onClose={() => setRecoverLink(null)}
+        title="Enlace de recuperación"
+        icon={<KeyRound className="h-5 w-5 text-accent" />}
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-muted">
+            Pásale este enlace a <strong className="text-fg">{recoverLink?.name}</strong>. Le deja
+            elegir una contraseña nueva, solo funciona una vez y caduca en {recoverLink?.minutes}{" "}
+            minutos.
+          </p>
+          <p className="break-all rounded-xl bg-surface-2 p-3 font-mono text-xs">{recoverLink?.url}</p>
+          <Button
+            className="w-full"
+            onClick={() => {
+              if (recoverLink) void navigator.clipboard.writeText(recoverLink.url);
+              setLinkCopied(true);
+            }}
+          >
+            {linkCopied ? <><Check className="h-4 w-4" /> Copiado</> : "Copiar enlace"}
+          </Button>
+        </div>
+      </Modal>
+
       <Modal open={previewOpen} onClose={() => setPreviewOpen(false)} title="Así la recibirá el grupo">
         <div className="space-y-4">
           <div className="rounded-2xl border border-border bg-surface-2/50 p-4">
@@ -493,6 +587,60 @@ export function AdminView() {
               </span>
             )}
           </p>
+        )}
+      </AdminSection>
+
+      {/* Cómo ha sentado cada novedad */}
+      <AdminSection icon={<Sparkles className="h-4 w-4" />} title="Reacciones a las novedades">
+        <p className="text-xs text-muted">
+          Recuento anónimo: se ve cuánta gente ha reaccionado, pero nunca quién ha votado qué.
+          Las novedades se dan de alta en <code className="text-fg">src/lib/updates.ts</code>.
+        </p>
+        {(updateReactions?.length ?? 0) === 0 ? (
+          <p className="text-sm text-muted">No hay ninguna novedad publicada.</p>
+        ) : (
+          <div className="space-y-3">
+            {updateReactions?.map((u) => (
+              <div key={u.id} className="space-y-2 rounded-xl border border-border bg-surface-2 p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">
+                      {u.emoji} {u.title}
+                    </p>
+                    <p className="text-xs text-muted">
+                      {format(new Date(u.date), "d MMM yyyy")} ·{" "}
+                      {u.seen === 0
+                        ? "sin reacciones todavía"
+                        : `${u.seen} ${u.seen === 1 ? "respuesta" : "respuestas"}`}
+                      {u.pending > 0 && ` · ${u.pending} sin ver`}
+                    </p>
+                  </div>
+                  {u.likePct !== null && (
+                    <span
+                      className={cn(
+                        "shrink-0 text-lg font-bold",
+                        u.likePct >= 50 ? "text-accent" : "text-amber-400",
+                      )}
+                    >
+                      {u.likePct}%
+                    </span>
+                  )}
+                </div>
+
+                {u.seen > 0 && (
+                  <div className="flex h-2 w-full overflow-hidden rounded-full bg-surface">
+                    <span className="bg-accent" style={{ width: `${(u.like / u.seen) * 100}%` }} />
+                    <span className="bg-amber-400" style={{ width: `${(u.meh / u.seen) * 100}%` }} />
+                  </div>
+                )}
+
+                <div className="flex gap-4 text-xs">
+                  <span className="text-accent">👍 {u.like}</span>
+                  <span className="text-amber-400">🫠 {u.meh}</span>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </AdminSection>
     </div>

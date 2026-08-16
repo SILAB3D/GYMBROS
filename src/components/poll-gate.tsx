@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { AlarmClock } from "lucide-react";
 import { api } from "@/trpc/react";
-import { Button } from "@/components/ui";
+import { Button, Modal } from "@/components/ui";
 import { PollAnswerCard } from "@/components/poll-card";
 import { cn } from "@/lib/utils";
 
@@ -43,36 +43,14 @@ export function PollGate() {
   const snoozesLeft = 3 - poll.snoozeCount;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="flex max-h-[88dvh] w-full flex-col gap-4 overflow-y-auto rounded-t-2xl border border-border bg-surface p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:max-w-md sm:rounded-2xl sm:pb-5">
-        <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-            📊 {pending.length === 1 ? "Encuesta del grupo" : `Encuesta ${index + 1} de ${pending.length}`}
-          </p>
-          {pending.length > 1 && (
-            <div className="flex flex-wrap gap-1">
-              {pending.map((p, i) => (
-                <button
-                  key={p.id}
-                  onClick={() => setTab(i)}
-                  className={cn(
-                    "h-7 w-7 rounded-lg text-xs font-bold transition",
-                    i === index ? "bg-accent text-accent-fg" : "bg-surface-2 text-muted hover:text-fg",
-                  )}
-                >
-                  {i + 1}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <PollAnswerCard
-          poll={poll}
-          selected={sel}
-          onSelect={(i) => setSelected((s) => ({ ...s, [poll.id]: i }))}
-        />
-
+    <Modal
+      open
+      onClose={() => undefined}
+      dismissible={false}
+      title="Encuesta del grupo"
+      subtitle={pending.length > 1 ? `Tienes ${pending.length} sin responder` : undefined}
+      icon={<span className="text-xl leading-none">📊</span>}
+      footer={
         <div className="space-y-2">
           <Button
             size="lg"
@@ -98,7 +76,32 @@ export function PollGate() {
             </p>
           )}
         </div>
+      }
+    >
+      <div className="space-y-4">
+        {pending.length > 1 && (
+          <div className="flex flex-wrap gap-1">
+            {pending.map((p, i) => (
+              <button
+                key={p.id}
+                onClick={() => setTab(i)}
+                className={cn(
+                  "h-7 w-7 rounded-lg text-xs font-bold transition",
+                  i === index ? "bg-accent text-accent-fg" : "bg-surface-2 text-muted hover:text-fg",
+                )}
+              >
+                {i + 1}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <PollAnswerCard
+          poll={poll}
+          selected={sel}
+          onSelect={(i) => setSelected((s) => ({ ...s, [poll.id]: i }))}
+        />
       </div>
-    </div>
+    </Modal>
   );
 }

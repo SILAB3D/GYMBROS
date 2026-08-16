@@ -148,3 +148,45 @@ export function affinityBetween(
     muscles: pct(muscles),
   };
 }
+
+export type AffinityDetail = {
+  frequency: { mine: number; theirs: number };
+  exercises: { mine: number; theirs: number };
+  sets: { mine: number; theirs: number };
+  /** Grupos musculares donde más se separan los dos repartos (en puntos %). */
+  muscles: Array<{ group: MuscleGroup; mine: number; theirs: number; gap: number }>;
+};
+
+/**
+ * Datos crudos de la comparación, para poder explicar en qué se diferencian
+ * dos formas de entrenar en lugar de soltar solo un porcentaje.
+ */
+export function affinityDetail(
+  a: AffinityProfile | undefined,
+  b: AffinityProfile | undefined,
+): AffinityDetail | null {
+  if (!a || !b || a.routines === 0 || b.routines === 0) return null;
+
+  const round = (n: number) => Math.round(n * 10) / 10;
+  const groups = new Set([
+    ...Object.keys(a.distribution),
+    ...Object.keys(b.distribution),
+  ]) as Set<MuscleGroup>;
+
+  const muscles = Array.from(groups)
+    .map((group) => {
+      const mine = Math.round((a.distribution[group] ?? 0) * 100);
+      const theirs = Math.round((b.distribution[group] ?? 0) * 100);
+      return { group, mine, theirs, gap: mine - theirs };
+    })
+    .filter((m) => Math.abs(m.gap) >= 5) // por debajo de 5 puntos no es diferencia
+    .sort((x, y) => Math.abs(y.gap) - Math.abs(x.gap))
+    .slice(0, 3);
+
+  return {
+    frequency: { mine: a.weekly, theirs: b.weekly },
+    exercises: { mine: round(a.avgExercises), theirs: round(b.avgExercises) },
+    sets: { mine: round(a.avgSets), theirs: round(b.avgSets) },
+    muscles,
+  };
+}

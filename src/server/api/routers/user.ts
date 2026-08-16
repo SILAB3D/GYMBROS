@@ -4,7 +4,15 @@ import { TRPCError } from "@trpc/server";
 import { startOfISOWeek, endOfISOWeek } from "date-fns";
 import { createTRPCRouter, publicProcedure, protectedProcedure } from "@/server/api/trpc";
 import { effectiveWeekStreak, streaksForUsers } from "@/server/services/streak";
-import { trainingProfiles, affinityBetween } from "@/server/services/affinity";
+import { trainingProfiles, affinityBetween, affinityDetail } from "@/server/services/affinity";
+import { sendPushToUsers } from "@/server/services/push";
+import {
+  RESET_TTL_MINUTES,
+  consumeResetToken,
+  createResetToken,
+  resetRequestsExceeded,
+  resetTokenIsValid,
+} from "@/server/services/password-reset";
 
 export const userRouter = createTRPCRouter({
   register: publicProcedure
@@ -187,8 +195,18 @@ export const userRouter = createTRPCRouter({
             },
           }),
         ]);
+      // Afinidad de entrenamiento con quien está mirando el perfil
+      const profiles = await trainingProfiles(ctx.db);
+      const myProfile = profiles.get(ctx.session.user.id);
+      const theirProfile = profiles.get(input.userId);
+      const isSelf = input.userId === ctx.session.user.id;
+
       const { lastCompletedWeek, weeklyTargetDays, ...publicUser } = user;
       return {
+        affinity: isSelf ? null : affinityBetween(myProfile, theirProfile),
+        affinityDetail: isSelf ? null : affinityDetail(myProfile, theirProfile),
+        myProfileEmpty: !myProfile || myProfile.routines === 0,
+        theirProfileEmpty: !theirProfile || theirProfile.routines === 0,
         user: {
           ...publicUser,
           currentStreak: effectiveWeekStreak({
@@ -218,41 +236,74 @@ export const userRouter = createTRPCRouter({
       return attendances.map((a) => a.date);
     }),
 
+  // Listado ligero del grupo. El detalle de cada miembro (incluida la afinidad
+  // de entrenamiento) se resuelve en su perfil, no aquí.
   list: protectedProcedure.query(async ({ ctx }) => {
     const me = ctx.session.user.id;
-    const [users, profiles] = await Promise.all([
-      ctx.db.user.findMany({
-        select: {
-          id: true, name: true, avatarUrl: true,
-          currentStreak: true, lastCompletedWeek: true, weeklyTargetDays: true,
-        },
-        orderBy: { name: "asc" },
-      }),
-      trainingProfiles(ctx.db),
-    ]);
-    const streaks = await streaksForUsers(ctx.db, users);
-    const myProfile = profiles.get(me);
-
-    return users.map(({ lastCompletedWeek, weeklyTargetDays, ...u }) => {
-      const profile = profiles.get(u.id);
-      const affinity = u.id === me ? null : affinityBetween(myProfile, profile);
-      return {
-        ...u,
-        currentStreak: streaks.get(u.id) ?? 0,
-        isMe: u.id === me,
-        affinity,
-        // Datos de su forma de entrenar, para explicar de dónde sale el número
-        profile: profile
-          ? {
-              weekly: profile.weekly,
-              avgExercises: Math.round(profile.avgExercises * 10) / 10,
-              avgSets: Math.round(profile.avgSets * 10) / 10,
-              topMuscle: profile.topMuscle,
-              routines: profile.routines,
-            }
-          : null,
-        myProfileEmpty: !myProfile || myProfile.routines === 0,
-      };
+    const users = await ctx.db.user.findMany({
+      select: {
+        id: true, name: true, avatarUrl: true,
+        currentStreak: true, lastCompletedWeek: true, weeklyTargetDays: true,
+      },
+      orderBy: { name: "asc" },
     });
+    const streaks = await streaksForUsers(ctx.db, users);
+    return users.map(({ lastCompletedWeek, weeklyTargetDays, ...u }) => ({
+      ...u,
+      currentStreak: streaks.get(u.id) ?? 0,
+      isMe: u.id === me,
+    }));
   }),
+
+  // ---------- Recuperación de contraseña ----------
+
+  /**
+   * Pide un enlace de recuperación. Se envía por push a los dispositivos donde
+   * la cuenta ya tiene sesión abierta.
+   *
+   * La respuesta es siempre la misma pase lo que pase: si distinguiera entre
+   * "no existe esa cuenta" y "te lo he enviado", cualquiera podría averiguar
+   * qué emails están registrados probando uno a uno.
+   */
+  requestReset: publicProcedure
+    // El teclado del móvil cuela espacios y mayúsculas al autocompletar: se
+    // limpian antes de validar, o el email quedaría rechazado por un espacio.
+    .input(z.object({ email: z.string().trim().toLowerCase().email() }))
+    .mutation(async ({ ctx, input }) => {
+      const email = input.email;
+      const user = await ctx.db.user.findUnique({
+        where: { email },
+        select: { id: true, _count: { select: { pushSubscriptions: true } } },
+      });
+      if (!user || user._count.pushSubscriptions === 0) return { ok: true };
+      if (await resetRequestsExceeded(ctx.db, user.id)) return { ok: true };
+
+      const token = await createResetToken(ctx.db, user.id);
+      await sendPushToUsers(ctx.db, [user.id], {
+        title: "Restablecer tu contraseña",
+        body: `Toca para elegir una nueva. El enlace caduca en ${RESET_TTL_MINUTES} minutos.`,
+        url: `/recuperar/${token}`,
+      });
+      return { ok: true };
+    }),
+
+  /** ¿Merece la pena enseñar el formulario o el enlace ya no sirve? */
+  checkResetToken: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .query(({ ctx, input }) => resetTokenIsValid(ctx.db, input.token)),
+
+  resetPassword: publicProcedure
+    .input(z.object({ token: z.string(), password: z.string().min(8) }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await consumeResetToken(ctx.db, input.token, input.password);
+      if (!result.ok) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Este enlace ya se ha usado o ha caducado. Pide uno nuevo.",
+        });
+      }
+      // El email vuelve para poder iniciar sesión sin pedirlo de nuevo: quien
+      // llega aquí ya ha demostrado tener el token de esa cuenta.
+      return { ok: true, email: result.email };
+    }),
 });

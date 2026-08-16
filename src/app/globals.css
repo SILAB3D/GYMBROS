@@ -36,6 +36,50 @@ body {
   scrollbar-width: none;
 }
 
+/* Entrada de las ventanas emergentes: el fondo funde y el panel sube desde
+   abajo en móvil (hoja inferior) o crece ligeramente en pantallas grandes. */
+.gb-modal-overlay {
+  animation: gb-modal-fade 0.18s ease-out both;
+}
+.gb-modal-panel {
+  animation: gb-modal-sheet 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@media (min-width: 640px) {
+  .gb-modal-panel {
+    animation: gb-modal-pop 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+@keyframes gb-modal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes gb-modal-sheet {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes gb-modal-pop {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gb-modal-overlay,
+  .gb-modal-panel { animation: none; }
+}
+
+/* Aviso de despedida tras la ventana de novedades: entra rápido y se
+   desvanece a lo largo de 3 s sin que haya que cerrarlo. */
+.gb-farewell {
+  animation: gb-farewell-in 0.25s ease-out both, gb-farewell-out 3s ease-in forwards;
+}
+@keyframes gb-farewell-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes gb-farewell-out {
+  0%, 45% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 /* Campos de fecha y hora: WebKit centra el texto y reserva un hueco extra para
    su icono, lo que desplazaba el contenido hacia la derecha respecto al resto
    de campos. Aquí se alinea a la izquierda y se recupera el espacio. */

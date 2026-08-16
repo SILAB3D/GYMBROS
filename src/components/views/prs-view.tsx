@@ -149,7 +149,28 @@ export function PRsView() {
         </>
       )}
 
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Registrar PR">
+      <Modal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        title="Registrar PR"
+        footer={
+          <Button
+            size="lg" className="w-full"
+            disabled={!form.exerciseId || (formNoWeight ? !form.reps : !form.weight)}
+            loading={create.isLoading}
+            onClick={() =>
+              create.mutate({
+                exerciseId: form.exerciseId,
+                weight: formNoWeight ? 0 : +form.weight,
+                reps: +form.reps || 1,
+                notes: form.notes || undefined,
+              })
+            }
+          >
+            Guardar PR
+          </Button>
+        }
+      >
         <div className="space-y-4">
           <div>
             <Label>Ejercicio</Label>
@@ -185,21 +206,6 @@ export function PRsView() {
             <Input value={form.notes} placeholder="Opcional"
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
           </div>
-          <Button
-            size="lg" className="w-full"
-            disabled={!form.exerciseId || (formNoWeight ? !form.reps : !form.weight)}
-            loading={create.isLoading}
-            onClick={() =>
-              create.mutate({
-                exerciseId: form.exerciseId,
-                weight: formNoWeight ? 0 : +form.weight,
-                reps: +form.reps || 1,
-                notes: form.notes || undefined,
-              })
-            }
-          >
-            Guardar PR
-          </Button>
         </div>
       </Modal>
     </div>

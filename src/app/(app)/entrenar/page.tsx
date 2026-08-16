@@ -218,16 +218,11 @@ export default function ActiveWorkoutPage() {
         </Button>
       </div>
 
-      <Modal open={finishOpen} onClose={() => setFinishOpen(false)} title="Terminar entrenamiento">
-        <div className="space-y-4">
-          <p className="text-sm text-muted">
-            Se guardarán las series marcadas como completadas y se detectarán tus nuevos PRs automáticamente.
-          </p>
-          <Input
-            value={notes}
-            placeholder="Comentarios (opcional)"
-            onChange={(e) => setNotes(e.target.value)}
-          />
+      <Modal
+        open={finishOpen}
+        onClose={() => setFinishOpen(false)}
+        title="Terminar entrenamiento"
+        footer={
           <Button
             size="lg"
             className="w-full"
@@ -236,11 +231,23 @@ export default function ActiveWorkoutPage() {
           >
             Guardar y terminar
           </Button>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-muted">
+            Se guardarán las series marcadas como completadas y se detectarán tus nuevos PRs automáticamente.
+          </p>
+          <Input
+            value={notes}
+            placeholder="Comentarios (opcional)"
+            onChange={(e) => setNotes(e.target.value)}
+          />
         </div>
       </Modal>
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Añadir ejercicio">
-        <div className="max-h-80 space-y-3 overflow-y-auto">
+        {/* El propio modal limita la altura y hace scroll */}
+        <div className="space-y-3">
           {Object.entries(grouped).map(([group, exercises]) => (
             <div key={group}>
               <p className="mb-1 text-xs font-semibold uppercase text-muted">

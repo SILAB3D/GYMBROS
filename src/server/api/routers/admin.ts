@@ -3,19 +3,49 @@ import { Role } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, adminProcedure } from "@/server/api/trpc";
 import { sendPushToUsers } from "@/server/services/push";
-import { usersWithCategory } from "@/server/services/notify-prefs";
+import {
+  usersWithCategory, NOTIFY_CATEGORIES, CATEGORY_LABELS,
+} from "@/server/services/notify-prefs";
+import { RESET_TTL_MINUTES, createResetToken, resetUrl } from "@/server/services/password-reset";
 
 export const adminRouter = createTRPCRouter({
-  users: adminProcedure.query(({ ctx }) =>
-    ctx.db.user.findMany({
+  users: adminProcedure.query(async ({ ctx }) => {
+    const users = await ctx.db.user.findMany({
       select: {
         id: true, name: true, email: true, role: true, createdAt: true,
-        currentStreak: true,
-        _count: { select: { workouts: true, attendances: true, personalRecords: true } },
+        currentStreak: true, notifyPrefs: true,
+        _count: {
+          select: {
+            workouts: true, attendances: true, personalRecords: true,
+            pushSubscriptions: true,
+          },
+        },
+        // Alta más reciente, para saber desde cuándo puede recibir avisos
+        pushSubscriptions: {
+          select: { createdAt: true },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
       },
       orderBy: { createdAt: "asc" },
-    }),
-  ),
+    });
+
+    // El permiso del navegador no se puede consultar desde el servidor: lo que
+    // sí sabemos es si el usuario llegó a registrar algún dispositivo, que es
+    // justo lo que hace falta para poder enviarle un push.
+    return users.map(({ notifyPrefs, pushSubscriptions, ...u }) => {
+      const prefs = (notifyPrefs ?? {}) as Record<string, boolean>;
+      const mutedCategories = NOTIFY_CATEGORIES.filter((c) => prefs[c] === false);
+      return {
+        ...u,
+        push: {
+          devices: u._count.pushSubscriptions,
+          since: pushSubscriptions[0]?.createdAt ?? null,
+          mutedCategories: mutedCategories.map((c) => CATEGORY_LABELS[c]),
+        },
+      };
+    });
+  }),
 
   setRole: adminProcedure
     .input(z.object({ userId: z.string(), role: z.nativeEnum(Role) }))
@@ -130,5 +160,21 @@ export const adminRouter = createTRPCRouter({
       });
       await sendPushToUsers(ctx.db, recipients, { title: input.title, body: input.body });
       return { sent: recipients.length, skipped: users.length - recipients.length };
+    }),
+
+  /**
+   * Enlace de recuperación para quien no puede recibirlo por push (iPhone sin
+   * la app instalada, permisos denegados, móvil nuevo). El admin se lo pasa
+   * por WhatsApp; caduca igual que los que se envían solos.
+   */
+  resetLink: adminProcedure
+    .input(z.object({ userId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const user = await ctx.db.user.findUniqueOrThrow({
+        where: { id: input.userId },
+        select: { id: true, name: true },
+      });
+      const token = await createResetToken(ctx.db, user.id);
+      return { url: resetUrl(token), expiresInMinutes: RESET_TTL_MINUTES, name: user.name };
     }),
 });

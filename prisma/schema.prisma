@@ -77,8 +77,27 @@ model User {
   pollSnoozes       PollSnooze[]
   pushSubscriptions PushSubscription[]
   gymSubscription   GymSubscription?
+  updatesSeen       UpdateSeen[]
+  resetTokens       PasswordResetToken[]
 
   lastChatReadAt DateTime? // para el contador de mensajes no leídos
+}
+
+// ---------- Recuperación de contraseña ----------
+
+/// Vale de un solo uso para restablecer la contraseña. Se entrega por push al
+/// dispositivo del usuario o, si no tiene push, lo genera un admin a mano.
+/// En la base solo vive el hash: el token original únicamente viaja en la URL.
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 // ---------- Ejercicios ----------
@@ -527,6 +546,27 @@ model PollVote {
   createdAt   DateTime @default(now())
 
   @@unique([pollId, userId])
+}
+
+// ---------- Novedades de la app ----------
+
+enum UpdateReaction {
+  LIKE // 👍 le ha gustado
+  MEH // 🫠 sin más
+}
+
+// Marca de que un usuario ya vio una novedad, con su reacción. El catálogo de
+// novedades NO vive en la base de datos: está en src/lib/updates.ts.
+model UpdateSeen {
+  id       String         @id @default(cuid())
+  userId   String
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  updateId String // id de la novedad en src/lib/updates.ts
+  reaction UpdateReaction
+  seenAt   DateTime       @default(now())
+
+  @@unique([userId, updateId])
+  @@index([updateId])
 }
 
 // ---------- Plantillas de notificación (disparador fijo, contenido editable) ----------

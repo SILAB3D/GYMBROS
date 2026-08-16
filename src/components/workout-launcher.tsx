@@ -82,7 +82,29 @@ export function WorkoutLauncher({ className }: { className?: string }) {
         <ChevronRight className="h-5 w-5 shrink-0" />
       </button>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="¿Qué rutina vas a entrenar?">
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="¿Qué rutina vas a entrenar?"
+        footer={
+          (routines?.length ?? 0) > 0 && (
+            <div className="space-y-2">
+              <Button
+                size="lg"
+                className="w-full"
+                disabled={!selected}
+                loading={start.isLoading}
+                onClick={() => selected && start.mutate({ routineId: selected })}
+              >
+                Iniciar entrenamiento
+              </Button>
+              {!selected && (
+                <p className="text-center text-xs text-muted">Selecciona una rutina para continuar</p>
+              )}
+            </div>
+          )
+        }
+      >
         {routines?.length === 0 ? (
           <div className="space-y-4 text-center">
             <p className="text-sm text-muted">
@@ -94,7 +116,8 @@ export function WorkoutLauncher({ className }: { className?: string }) {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+            {/* La altura y el scroll los gestiona el propio modal */}
+            <div className="space-y-2">
               {routines?.map((r) => (
                 <button
                   key={r.id}
@@ -122,18 +145,6 @@ export function WorkoutLauncher({ className }: { className?: string }) {
                 </button>
               ))}
             </div>
-            <Button
-              size="lg"
-              className="w-full"
-              disabled={!selected}
-              loading={start.isLoading}
-              onClick={() => selected && start.mutate({ routineId: selected })}
-            >
-              Iniciar entrenamiento
-            </Button>
-            {!selected && (
-              <p className="text-center text-xs text-muted">Selecciona una rutina para continuar</p>
-            )}
           </div>
         )}
       </Modal>

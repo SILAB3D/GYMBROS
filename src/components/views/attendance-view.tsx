@@ -176,6 +176,25 @@ export function AttendanceView() {
         open={dayDetail !== null}
         onClose={() => setDayDetail(null)}
         title={dayDetail ? format(dayDetail, "EEEE d 'de' MMMM yyyy", { locale: es }) : undefined}
+        subtitle={
+          isSameDay(dayDetail ?? new Date(), new Date()) ? "Es el día de hoy" : undefined
+        }
+        footer={
+          <Button
+            variant="danger"
+            className="w-full"
+            loading={deleteDay.isLoading}
+            disabled={!day?.attendance && (day?.workouts.length ?? 0) === 0}
+            onClick={() => {
+              if (!dayDetail) return;
+              if (confirm("¿Borrar este día y todo lo que generó? No se puede deshacer.")) {
+                deleteDay.mutate({ date: dayDetail });
+              }
+            }}
+          >
+            <Trash2 className="h-4 w-4" /> Borrar el día y sus puntos
+          </Button>
+        }
       >
         {dayLoading && !day ? (
           <Spinner />
@@ -216,24 +235,6 @@ export function AttendanceView() {
               generaron: puntos de asistencia, de entreno y de PR, los récords detectados
               automáticamente y las publicaciones del grupo. La racha se recalcula.
             </p>
-
-            <Button
-              variant="danger"
-              className="w-full"
-              loading={deleteDay.isLoading}
-              disabled={!day?.attendance && (day?.workouts.length ?? 0) === 0}
-              onClick={() => {
-                if (!dayDetail) return;
-                if (confirm("¿Borrar este día y todo lo que generó? No se puede deshacer.")) {
-                  deleteDay.mutate({ date: dayDetail });
-                }
-              }}
-            >
-              <Trash2 className="h-4 w-4" /> Borrar el día y sus puntos
-            </Button>
-            {isSameDay(dayDetail ?? new Date(), new Date()) && (
-              <p className="text-center text-[11px] text-muted">Estás borrando el día de hoy.</p>
-            )}
           </div>
         )}
       </Modal>
