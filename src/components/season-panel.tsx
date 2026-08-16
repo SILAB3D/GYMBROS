@@ -15,13 +15,13 @@ type Season = {
   topPoints: number;
 };
 
-/** Panel de temporada con estética de videojuego. Lleva a Comunidad → Ranking. */
+/** Panel de temporada con estética de videojuego. Lleva a Comunidad → Ranking → Temporada. */
 export function SeasonPanel({ season }: { season: Season }) {
   const pct = season.topPoints > 0 ? Math.min(100, (season.myPoints / season.topPoints) * 100) : 0;
   const started = season.started;
 
   return (
-    <Link href="/comunidad?tab=ranking" className="group block h-full">
+    <Link href="/comunidad?tab=ranking&periodo=season" className="group block h-full">
       <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-gold/40 bg-[#0d0b06] p-4 transition-all duration-300 hover:border-gold/70 hover:shadow-[0_0_28px_-6px_rgba(251,191,36,0.45)]">
         {/* Fondo: resplandor y rejilla sutil */}
         <div

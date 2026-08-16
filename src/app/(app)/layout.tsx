@@ -3,6 +3,7 @@ import { getServerAuthSession } from "@/server/auth";
 import { Sidebar, BottomNav, MobileHeader } from "@/components/nav";
 import { FeedbackButton } from "@/components/feedback-button";
 import { PollGate } from "@/components/poll-gate";
+import { PushPermissionGate } from "@/components/push-permission-gate";
 import { OnboardingTutorial } from "@/components/onboarding-tutorial";
 import { OfflineManager } from "@/components/offline-manager";
 import { PageTransition } from "@/components/page-transition";
@@ -25,6 +26,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
         <FeedbackButton />
         <PollGate />
+        <PushPermissionGate />
         <OnboardingTutorial />
         <OfflineManager />
         <AppSplash />

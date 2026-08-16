@@ -64,7 +64,7 @@ export default function ActiveWorkoutPage() {
           <p className="text-muted">+15 puntos para el ranking</p>
         )}
         <Link href="/panel">
-          <Button size="lg">Volver al panel</Button>
+          <Button size="lg">Volver a inicio</Button>
         </Link>
       </div>
     );

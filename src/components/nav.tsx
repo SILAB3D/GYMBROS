@@ -8,7 +8,7 @@ import { api } from "@/trpc/react";
 import { Logo } from "@/components/logo";
 
 const NAV = [
-  { href: "/panel", label: "Panel", icon: LayoutDashboard, match: /^\/panel/ },
+  { href: "/panel", label: "Inicio", icon: LayoutDashboard, match: /^\/panel/ },
   { href: "/entrenamiento", label: "Entrenamiento", icon: Dumbbell, match: /^\/(entrenamiento|rutinas|entrenar|asistencia|prs)/ },
   { href: "/comunidad", label: "Comunidad", icon: Users, match: /^\/(comunidad|ranking|perfil)/ },
   { href: "/inversion", label: "Inversión", icon: Wallet, match: /^\/inversion/ },

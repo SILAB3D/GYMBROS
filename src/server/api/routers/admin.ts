@@ -3,6 +3,7 @@ import { Role } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, adminProcedure } from "@/server/api/trpc";
 import { sendPushToUsers } from "@/server/services/push";
+import { usersWithCategory } from "@/server/services/notify-prefs";
 
 export const adminRouter = createTRPCRouter({
   users: adminProcedure.query(({ ctx }) =>
@@ -116,10 +117,18 @@ export const adminRouter = createTRPCRouter({
     .input(z.object({ title: z.string().min(1).max(120), body: z.string().max(500).optional() }))
     .mutation(async ({ ctx, input }) => {
       const users = await ctx.db.user.findMany({ select: { id: true } });
+      // Se respeta la preferencia de cada usuario: los avisos del admin tienen
+      // su propia categoría para poder silenciarlos sin perder el resto.
+      const recipients = await usersWithCategory(
+        ctx.db,
+        users.map((u) => u.id),
+        "announcements",
+      );
+      if (recipients.length === 0) return { sent: 0, skipped: users.length };
       await ctx.db.notification.createMany({
-        data: users.map((u) => ({ userId: u.id, type: "SYSTEM" as const, title: input.title, body: input.body })),
+        data: recipients.map((id) => ({ userId: id, type: "SYSTEM" as const, title: input.title, body: input.body })),
       });
-      await sendPushToUsers(ctx.db, users.map((u) => u.id), { title: input.title, body: input.body });
-      return { sent: users.length };
+      await sendPushToUsers(ctx.db, recipients, { title: input.title, body: input.body });
+      return { sent: recipients.length, skipped: users.length - recipients.length };
     }),
 });

@@ -22,12 +22,12 @@ const STEPS: Array<{ icon: React.ReactNode; title: string; text: string }> = [
   {
     icon: <span className="text-5xl">🗓️</span>,
     title: "Arma tu plan",
-    text: "Tus rutinas aparecen solas en Entrenamiento → Plan según sus veces por semana. Ordénalas con las flechas o pulsa «Ordenar automáticamente», y el panel te dirá qué toca cada día.",
+    text: "Tus rutinas aparecen solas en Entrenamiento → Rutinas y plan según sus veces por semana. Ordénalas con las flechas o pulsa «Ordenar automáticamente», e Inicio te dirá qué toca cada día.",
   },
   {
     icon: <span className="text-5xl">🏋️</span>,
     title: "Registra tus entrenos",
-    text: "Pulsa el botón verde del panel, elige la rutina y marca series y pesos (vienen precargados de tu última sesión). Al terminar, la asistencia y los PRs se registran solos.",
+    text: "Pulsa el botón verde de Inicio, elige la rutina y marca series y pesos (vienen precargados de tu última sesión). Al terminar, la asistencia y los PRs se registran solos.",
   },
   {
     icon: <span className="text-5xl">🔥</span>,

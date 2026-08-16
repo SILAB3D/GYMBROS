@@ -29,7 +29,7 @@ export function AdminView() {
   const { data: feedbacks } = api.feedback.listAll.useQuery();
 
   const [broadcast, setBroadcast] = useState({ title: "", body: "" });
-  const [sent, setSent] = useState(false);
+  const [sent, setSent] = useState<{ sent: number; skipped: number } | null>(null);
   const [poll, setPoll] = useState({ title: "", description: "", options: ["", ""], schedule: "now" as "now" | "h22" | "h10" });
   const [previewOpen, setPreviewOpen] = useState(false);
   const [pollSent, setPollSent] = useState(false);
@@ -68,9 +68,9 @@ export function AdminView() {
     onSuccess: () => utils.admin.notificationTemplates.invalidate(),
   });
   const sendBroadcast = api.admin.broadcast.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
       setBroadcast({ title: "", body: "" });
-      setSent(true);
+      setSent(result);
       // La notificación también llega al propio admin: refrescar su campanita al momento
       utils.notification.invalidate();
     },
@@ -481,7 +481,19 @@ export function AdminView() {
         >
           Enviar a todos
         </Button>
-        {sent && <p className="text-sm text-accent">Enviada ✅</p>}
+        <p className="text-xs text-muted">
+          Llega a quien tenga activada la categoría «Avisos del administrador» en sus ajustes.
+        </p>
+        {sent && (
+          <p className="text-sm text-accent">
+            Enviada a {sent.sent} {sent.sent === 1 ? "persona" : "personas"} ✅
+            {sent.skipped > 0 && (
+              <span className="text-muted">
+                {" "}· {sent.skipped} {sent.skipped === 1 ? "la tiene" : "las tienen"} silenciada
+              </span>
+            )}
+          </p>
+        )}
       </AdminSection>
     </div>
   );

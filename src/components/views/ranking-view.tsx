@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { TrendingUp, TrendingDown, Minus, Crown } from "lucide-react";
 import { api } from "@/trpc/react";
@@ -30,8 +31,19 @@ const POINT_LABELS: Record<string, string> = {
   CUSTOM: "Puntos extra del admin",
 };
 
+type Period = (typeof PERIODS)[number]["key"];
+
 export function RankingView() {
-  const [period, setPeriod] = useState<"week" | "month" | "season" | "year">("week");
+  const params = useSearchParams();
+  const [period, setPeriod] = useState<Period>("week");
+
+  // Permite entrar directamente a un periodo concreto, p. ej. desde el panel
+  // de temporada de Inicio: /comunidad?tab=ranking&periodo=season
+  const requested = params.get("periodo");
+  useEffect(() => {
+    if (PERIODS.some((p) => p.key === requested)) setPeriod(requested as Period);
+  }, [requested]);
+
   const { data, isLoading } = api.ranking.get.useQuery({ period });
   const { data: breakdown } = api.ranking.myBreakdown.useQuery({ period });
   const { data: seasons } = api.ranking.seasons.useQuery(undefined, {

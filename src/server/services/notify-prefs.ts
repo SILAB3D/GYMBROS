@@ -1,7 +1,9 @@
 import type { PrismaClient } from "@prisma/client";
 
 /** Categorías generales de notificación que cada usuario puede activar/desactivar. */
-export const NOTIFY_CATEGORIES = ["prs", "workouts", "streaks", "reminders", "system"] as const;
+export const NOTIFY_CATEGORIES = [
+  "prs", "workouts", "streaks", "reminders", "announcements", "system",
+] as const;
 export type NotifyCategory = (typeof NOTIFY_CATEGORIES)[number];
 
 export const CATEGORY_LABELS: Record<NotifyCategory, string> = {
@@ -9,6 +11,7 @@ export const CATEGORY_LABELS: Record<NotifyCategory, string> = {
   workouts: "Entrenos del grupo",
   streaks: "Rachas y semanas",
   reminders: "Recordatorios de entreno",
+  announcements: "Avisos del administrador",
   system: "Sistema, encuestas y logros",
 };
 

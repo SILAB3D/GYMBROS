@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Providers } from "./providers";
+import { BootSplash } from "@/components/boot-splash";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -52,6 +53,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         ))}
       </head>
       <body className="font-sans min-h-dvh">
+        {/* Va antes que nada: es lo primero que se pinta al abrir la app */}
+        <BootSplash />
         <Providers>{children}</Providers>
       </body>
     </html>

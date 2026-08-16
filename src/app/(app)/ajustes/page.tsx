@@ -19,6 +19,7 @@ const NOTIFY_CATEGORIES: Array<{ key: string; label: string }> = [
   { key: "workouts", label: "Entrenos del grupo" },
   { key: "streaks", label: "Rachas y semanas" },
   { key: "reminders", label: "Recordatorios de entreno" },
+  { key: "announcements", label: "Avisos del administrador" },
   { key: "system", label: "Sistema, encuestas y logros" },
 ];
 

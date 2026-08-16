@@ -1,0 +1,159 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { BellRing, LifeBuoy, ChevronDown, SlidersHorizontal } from "lucide-react";
+import { api } from "@/trpc/react";
+import { Button, Modal } from "@/components/ui";
+import { PushHelp } from "@/components/push-help";
+import { cn } from "@/lib/utils";
+import {
+  enablePush, pushSupported, isIosBrowserTab, detectPlatform, type Platform,
+} from "@/lib/push";
+
+const SNOOZE_KEY = "gymbros-push-prompt-snooze";
+/** Si se pospone, no vuelve a preguntar en tres días. */
+const SNOOZE_MS = 3 * 24 * 60 * 60 * 1000;
+/** Se deja respirar a la pantalla de carga antes de aparecer. */
+const DELAY_MS = 2500;
+
+/**
+ * Al entrar en la app comprueba el permiso de notificaciones del navegador
+ * (el del dispositivo, no las categorías de Ajustes) y, si falta, lo pide con
+ * un aviso. Las encuestas pendientes tienen prioridad: si hay alguna, este
+ * aviso espera a otra visita.
+ */
+export function PushPermissionGate() {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [denied, setDenied] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [platform, setPlatform] = useState<Platform>("desktop");
+  const [iosBrowser, setIosBrowser] = useState(false);
+
+  const subscribe = api.push.subscribe.useMutation();
+  const unsubscribe = api.push.unsubscribe.useMutation();
+  const { data: polls } = api.poll.listActive.useQuery();
+  const pollPending = (polls ?? []).some((p) => p.myVote === null);
+
+  useEffect(() => {
+    if (!pushSupported() || pollPending) return;
+    setPlatform(detectPlatform());
+    setIosBrowser(isIosBrowserTab());
+
+    const snoozedUntil = Number(localStorage.getItem(SNOOZE_KEY) ?? 0);
+    if (Date.now() < snoozedUntil) return;
+
+    const timer = setTimeout(() => {
+      void (async () => {
+        // "granted" sin suscripción también cuenta: el permiso está dado pero
+        // este dispositivo aún no recibiría nada.
+        if (Notification.permission === "granted") {
+          const reg = await navigator.serviceWorker.getRegistration();
+          const sub = await reg?.pushManager.getSubscription();
+          if (sub) return;
+        }
+        setDenied(Notification.permission === "denied");
+        setOpen(true);
+      })();
+    }, DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [pollPending]);
+
+  function snooze() {
+    try {
+      localStorage.setItem(SNOOZE_KEY, String(Date.now() + SNOOZE_MS));
+    } catch {
+      /* almacenamiento no disponible */
+    }
+    setOpen(false);
+  }
+
+  async function activate() {
+    setBusy(true);
+    setError(null);
+    setShowHelp(false);
+    const result = await enablePush(
+      (payload) => subscribe.mutateAsync(payload),
+      (payload) => unsubscribe.mutateAsync(payload),
+    );
+    if (result.ok) {
+      setDone(true);
+      // Ya está resuelto: no hace falta volver a preguntar
+      try {
+        localStorage.removeItem(SNOOZE_KEY);
+      } catch {
+        /* almacenamiento no disponible */
+      }
+      setTimeout(() => setOpen(false), 1200);
+    } else {
+      setError(result.error);
+      setDenied(result.denied);
+      if (result.pushServiceError || result.denied) setShowHelp(true);
+    }
+    setBusy(false);
+  }
+
+  return (
+    <Modal open={open} onClose={snooze} title="Activa las notificaciones">
+      <div className="space-y-4">
+        <div className="flex items-start gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-accent/15">
+            <BellRing className="h-5 w-5 text-accent" />
+          </span>
+          <div className="space-y-1">
+            <p className="text-sm">
+              Para recibir avisos hace falta que <strong>concedas el permiso en el dispositivo</strong>.
+              Sin él, GymBros no puede notificarte nada aunque tengas todo activado dentro de la app.
+            </p>
+            <p className="text-sm text-muted">
+              Luego, desde <strong>Ajustes → Notificaciones</strong>, eliges qué avisos quieres
+              recibir y cuáles no: PRs del grupo, rachas, recordatorios, avisos del administrador…
+            </p>
+          </div>
+        </div>
+
+        {done ? (
+          <p className="rounded-xl bg-accent/10 p-3 text-sm text-accent">
+            ¡Listo! Ya recibirás notificaciones en este dispositivo ✅
+          </p>
+        ) : iosBrowser ? (
+          <p className="rounded-xl bg-surface-2 p-3 text-sm text-muted">
+            📱 En iPhone: pulsa <strong>Compartir → Añadir a pantalla de inicio</strong>, abre
+            GymBros desde el icono nuevo y acepta el aviso desde ahí (requiere iOS 16.4+).
+          </p>
+        ) : (
+          <Button size="lg" className="w-full" loading={busy} onClick={activate}>
+            <BellRing className="h-4 w-4" /> Conceder permiso
+          </Button>
+        )}
+
+        {error && (
+          <div className="space-y-2">
+            <p className="text-sm text-red-400">{error}</p>
+            <Button size="sm" variant="secondary" onClick={() => setShowHelp((v) => !v)}>
+              <LifeBuoy className="h-3.5 w-3.5" /> ¿Cómo lo soluciono?
+              <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showHelp && "rotate-180")} />
+            </Button>
+            {showHelp && <PushHelp platform={platform} denied={denied} />}
+          </div>
+        )}
+
+        {!done && (
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Link href="/ajustes" className="flex-1" onClick={snooze}>
+              <Button variant="secondary" className="w-full">
+                <SlidersHorizontal className="h-4 w-4" /> Ver ajustes
+              </Button>
+            </Link>
+            <Button variant="ghost" className="flex-1" onClick={snooze}>
+              Ahora no
+            </Button>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}

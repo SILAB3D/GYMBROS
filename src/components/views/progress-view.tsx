@@ -46,8 +46,8 @@ const FLAT_PCT = 5;
 
 /**
  * Barra divergente de progreso: el 0% está en el centro, el avance crece hacia
- * la derecha y el retroceso hacia la izquierda. La franja central marca la zona
- * de estancamiento (±5%).
+ * la derecha y el retroceso hacia la izquierda. El color ya distingue el
+ * estancamiento, así que la barra no dibuja ninguna franja extra.
  */
 function TrendBar({ changePct, className }: { changePct: number | null; className?: string }) {
   const pct = changePct ?? 0;
@@ -61,12 +61,8 @@ function TrendBar({ changePct, className }: { changePct: number | null; classNam
           : `${pct > 0 ? "+" : ""}${pct.toFixed(0)}% de volumen (escala ±${SCALE_PCT}%)`
       }
     >
-      {/* Zona neutra: dentro de ella el volumen se considera estancado */}
-      <span
-        className="absolute inset-y-0 left-1/2 -translate-x-1/2 bg-white/10"
-        style={{ width: `${(FLAT_PCT / SCALE_PCT) * 100}%` }}
-      />
-      <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/40" />
+      {/* Marca del 0%, desde donde arranca la barra a un lado o al otro */}
+      <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/50" />
       {changePct !== null && (
         <span
           className={cn("absolute inset-y-0 rounded-full bg-current", className)}
@@ -178,9 +174,9 @@ export function ProgressView() {
         El volumen de una sesión son los kg levantados (peso × repeticiones de las series
         completadas). En los ejercicios marcados como «sin peso» se cuentan las repeticiones
         totales. En la barra, el 0% está en el centro: el avance crece hacia la derecha y el
-        retroceso hacia la izquierda, con la escala llena a ±{SCALE_PCT}% y la franja central
-        marcando el ±{FLAT_PCT}% de estancamiento. Hacen falta al menos 2 sesiones para calcular
-        una tendencia.
+        retroceso hacia la izquierda, con la escala llena a ±{SCALE_PCT}%. Por debajo de ±
+        {FLAT_PCT}% se considera estancamiento. Hacen falta al menos 2 sesiones para calcular una
+        tendencia.
       </Card>
     </div>
   );

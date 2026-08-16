@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 /**
- * Pantalla de bienvenida animada al abrir la app.
- * Se muestra una vez por sesión (y siempre al abrirla desde el icono de la
- * pantalla de inicio), encadenando con la pantalla nativa del sistema.
+ * Pantalla de bienvenida animada al abrir la app en el NAVEGADOR, una vez por
+ * sesión. Con la app instalada no interviene: allí la anima <BootSplash>, que
+ * viaja en el HTML inicial y por tanto releva de inmediato a la pantalla de
+ * carga del sistema, sin esperar a que cargue React.
  */
 export function AppSplash() {
   const [mounted, setMounted] = useState(false);
@@ -17,10 +18,10 @@ export function AppSplash() {
     setMounted(true);
     const standalone =
       window.matchMedia("(display-mode: standalone)").matches ||
+      window.matchMedia("(display-mode: fullscreen)").matches ||
       (navigator as unknown as { standalone?: boolean }).standalone === true;
     const alreadySeen = sessionStorage.getItem("gymbros-splash") === "1";
-    // Siempre al abrir como app instalada; en navegador, una vez por sesión
-    if (alreadySeen && !standalone) return;
+    if (standalone || alreadySeen) return;
 
     sessionStorage.setItem("gymbros-splash", "1");
     setShow(true);
