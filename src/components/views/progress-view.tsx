@@ -39,6 +39,44 @@ const STYLES: Record<Direction, { card: string; text: string; label: string; ico
 
 const nf = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 0 });
 
+/** Variación (en %) que llena por completo media barra. */
+const SCALE_PCT = 50;
+/** Margen que se considera estancamiento, a juego con el cálculo del servidor. */
+const FLAT_PCT = 5;
+
+/**
+ * Barra divergente de progreso: el 0% está en el centro, el avance crece hacia
+ * la derecha y el retroceso hacia la izquierda. La franja central marca la zona
+ * de estancamiento (±5%).
+ */
+function TrendBar({ changePct, className }: { changePct: number | null; className?: string }) {
+  const pct = changePct ?? 0;
+  const half = (Math.min(Math.abs(pct), SCALE_PCT) / SCALE_PCT) * 50;
+  return (
+    <div
+      className="relative h-2 w-full overflow-hidden rounded-full bg-black/30"
+      title={
+        changePct === null
+          ? "Sin datos suficientes para calcular la tendencia"
+          : `${pct > 0 ? "+" : ""}${pct.toFixed(0)}% de volumen (escala ±${SCALE_PCT}%)`
+      }
+    >
+      {/* Zona neutra: dentro de ella el volumen se considera estancado */}
+      <span
+        className="absolute inset-y-0 left-1/2 -translate-x-1/2 bg-white/10"
+        style={{ width: `${(FLAT_PCT / SCALE_PCT) * 100}%` }}
+      />
+      <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/40" />
+      {changePct !== null && (
+        <span
+          className={cn("absolute inset-y-0 rounded-full bg-current", className)}
+          style={pct >= 0 ? { left: "50%", width: `${half}%` } : { right: "50%", width: `${half}%` }}
+        />
+      )}
+    </div>
+  );
+}
+
 /**
  * Progreso por ejercicio: un cuadro compacto por ejercicio de la rutina con la
  * tendencia de su volumen de entrenamiento a lo largo del tiempo (media de las
@@ -68,8 +106,8 @@ export function ProgressView() {
         <h1 className="text-2xl font-bold">Progreso por ejercicio</h1>
         <p className="text-sm text-muted">
           Volumen de las 3 últimas sesiones frente a las 3 anteriores.{" "}
-          <span className="text-accent">Verde</span> si subes,{" "}
-          <span className="text-amber-400">ámbar</span> si te estancas,{" "}
+          <span className="text-accent">Verde</span> si subes más de un 5%,{" "}
+          <span className="text-amber-400">ámbar</span> si te mantienes dentro de ±5%,{" "}
           <span className="text-red-400">rojo</span> si retrocedes.
         </p>
       </div>
@@ -100,10 +138,6 @@ export function ProgressView() {
             const style = STYLES[ex.direction as Direction];
             const Icon = style.icon;
             const pct = ex.changePct;
-            // Una sola barra fina: cuánto queda del récord de volumen de este
-            // ejercicio. Ocupa 4 px y dice de un vistazo si la última sesión
-            // anda cerca de tu mejor marca o muy por debajo.
-            const ofBest = ex.last !== null && ex.best ? Math.min(100, (ex.last / ex.best) * 100) : 0;
             return (
               <div
                 key={ex.id}
@@ -128,19 +162,7 @@ export function ProgressView() {
                   </span>
                 </div>
 
-                <div
-                  className="h-1 w-full overflow-hidden rounded-full bg-black/25"
-                  title={
-                    ex.best
-                      ? `${ofBest.toFixed(0)}% de tu récord (${nf.format(ex.best)} ${ex.unit === "kg" ? "kg" : "reps"})`
-                      : undefined
-                  }
-                >
-                  <div
-                    className={cn("h-full rounded-full bg-current", style.text)}
-                    style={{ width: `${ofBest}%` }}
-                  />
-                </div>
+                <TrendBar changePct={pct} className={style.text} />
 
                 <p className="truncate text-[10px] text-muted">
                   {style.label}
@@ -155,8 +177,10 @@ export function ProgressView() {
       <Card className="py-3 text-xs text-muted">
         El volumen de una sesión son los kg levantados (peso × repeticiones de las series
         completadas). En los ejercicios marcados como «sin peso» se cuentan las repeticiones
-        totales. La barra fina indica cuánto se acerca la última sesión a tu récord de volumen
-        en ese ejercicio. Hacen falta al menos 2 sesiones para calcular una tendencia.
+        totales. En la barra, el 0% está en el centro: el avance crece hacia la derecha y el
+        retroceso hacia la izquierda, con la escala llena a ±{SCALE_PCT}% y la franja central
+        marcando el ±{FLAT_PCT}% de estancamiento. Hacen falta al menos 2 sesiones para calcular
+        una tendencia.
       </Card>
     </div>
   );

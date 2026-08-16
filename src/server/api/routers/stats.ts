@@ -4,7 +4,7 @@ import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 /** Sesiones que se comparan a cada lado para calcular la tendencia. */
 const WINDOW = 3;
 /** Umbral (en %) por debajo del cual se considera que el volumen se mantiene. */
-const FLAT_PCT = 3;
+const FLAT_PCT = 5;
 
 export type TrendDirection = "up" | "flat" | "down" | "unknown";
 
