@@ -150,8 +150,12 @@ export function ProgressBar({ value, className }: { value: number; className?: s
 
 // ---------- Estados ----------
 
+/**
+ * Cargador de contenido. Igual que en las rutas, tarda un poco en hacerse
+ * visible para que una consulta rápida no provoque un parpadeo.
+ */
 export function Spinner({ className }: { className?: string }) {
-  return <GymLoader className={className} />;
+  return <GymLoader className={className} delayMs={200} />;
 }
 
 export function EmptyState({

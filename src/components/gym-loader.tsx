@@ -7,8 +7,19 @@ import { createPortal } from "react-dom";
  * Cargador de la app: el logo girando, SIEMPRE centrado en la pantalla.
  * Se renderiza mediante un portal en <body> para que ningún contenedor con
  * `transform` (que rompe el posicionamiento fixed) lo desplace.
+ *
+ * `delayMs` retrasa su aparición: si lo que se está esperando llega antes, el
+ * cargador se desmonta sin haber llegado a verse y se evita el parpadeo.
  */
-export function GymLoader({ className, visible = true }: { className?: string; visible?: boolean }) {
+export function GymLoader({
+  className,
+  visible = true,
+  delayMs = 0,
+}: {
+  className?: string;
+  visible?: boolean;
+  delayMs?: number;
+}) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -21,7 +32,10 @@ export function GymLoader({ className, visible = true }: { className?: string; v
       style={{ opacity: visible ? 1 : 0 }}
       aria-hidden={!visible}
     >
-      <div className="gb-enter relative flex items-center justify-center">
+      <div
+        className="gb-enter relative flex items-center justify-center"
+        style={delayMs > 0 ? { animationDelay: `${delayMs}ms` } : undefined}
+      >
         {/* Halo */}
         <div className="absolute h-24 w-24 animate-pulse rounded-full bg-accent/15 blur-2xl" />
 

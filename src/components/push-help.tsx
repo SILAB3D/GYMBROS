@@ -18,11 +18,18 @@ export function PushHelp({ platform, denied }: { platform: Platform; denied: boo
     });
   }
 
-  steps.push({
-    title: "Reinicia la app por completo",
-    detail:
-      "Ciérrala del todo, no solo la minimices, y vuelve a abrirla. El registro anterior puede haber quedado a medias y al reintentar se limpia solo.",
-  });
+  steps.push(
+    {
+      title: "Comprueba que no estás en incógnito",
+      detail:
+        "En una ventana privada o de incógnito las notificaciones push no funcionan: el navegador descarta el registro al cerrarla, así que el alta falla o deja de recibir avisos sin avisar. Abre GymBros en una ventana normal (o desde el icono de la pantalla de inicio) y actívalas ahí.",
+    },
+    {
+      title: "Reinicia la app por completo",
+      detail:
+        "Ciérrala del todo, no solo la minimices, y vuelve a abrirla. El registro anterior puede haber quedado a medias y al reintentar se limpia solo.",
+    },
+  );
 
   if (platform === "android") {
     steps.push(

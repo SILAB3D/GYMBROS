@@ -1,63 +1,40 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import { GymLoader } from "@/components/gym-loader";
-
-type Phase = "idle" | "leaving" | "loading" | "entering";
 
 /**
- * Transición encadenada al cambiar de pantalla:
- *   contenido actual → se desvanece → cargador → se desvanece → nueva pantalla.
- * El cargador solo aparece si la ruta tarda; si va rápida, se encadenan los fundidos.
+ * Entrada suave de cada pantalla.
+ *
+ * Antes había aquí una secuencia con tiempos fijos (salida → cargador →
+ * entrada) que se disparaba en cada cambio de ruta. El problema es que
+ * `usePathname` solo cambia cuando la nueva pantalla YA está montada: el
+ * cargador llegaba tarde y tapaba un contenido que estaba listo desde el
+ * principio, de ahí el parpadeo «contenido → cargador → contenido».
+ *
+ * Ahora la transición es solo un fundido de entrada: si la pantalla está lista
+ * al momento, no se ve ningún cargador. Cuando la navegación sí tarda de
+ * verdad, quien muestra el cargador es el `loading.tsx` de la ruta, que es el
+ * único que conoce el estado real de la carga.
  */
 export function PageTransition({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [phase, setPhase] = useState<Phase>("entering");
-  const first = useRef(true);
-
-  useEffect(() => {
-    // La primera carga no necesita fundido de salida
-    if (first.current) {
-      first.current = false;
-      const t = setTimeout(() => setPhase("idle"), 320);
-      return () => clearTimeout(t);
-    }
-
-    // 1) El contenido anterior se desvanece
-    setPhase("leaving");
-    // 2) Aparece el cargador (con su propio fundido de entrada)
-    const toLoading = setTimeout(() => setPhase("loading"), 180);
-    // 3) El cargador se desvanece y entra la nueva pantalla
-    const toEntering = setTimeout(() => setPhase("entering"), 460);
-    const toIdle = setTimeout(() => setPhase("idle"), 800);
-
-    return () => {
-      clearTimeout(toLoading);
-      clearTimeout(toEntering);
-      clearTimeout(toIdle);
-    };
-  }, [pathname]);
-
-  const showLoader = phase === "loading";
-  const contentVisible = phase === "idle" || phase === "entering";
 
   return (
-    <div className="relative">
-      {/* Cargador fijo en el centro: se desvanece antes de mostrar el contenido */}
-      {phase !== "idle" && <GymLoader visible={showLoader} />}
-
-      {/* Contenido: se desvanece al salir y entra suavemente */}
-      <div
-        className="transition-all duration-300 ease-out"
-        style={{
-          opacity: contentVisible ? 1 : 0,
-          transform: contentVisible ? "translateY(0)" : "translateY(8px)",
-          pointerEvents: contentVisible ? undefined : "none",
-        }}
-      >
-        {children}
-      </div>
+    // La clave reinicia la animación en cada pantalla
+    <div key={pathname} className="gb-page">
+      {children}
+      <style jsx>{`
+        .gb-page {
+          animation: gb-page-in 0.22s ease-out both;
+        }
+        @keyframes gb-page-in {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: none; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .gb-page { animation: none; }
+        }
+      `}</style>
     </div>
   );
 }
