@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BellRing, LifeBuoy, ChevronDown, SlidersHorizontal } from "lucide-react";
+import { BellRing, LifeBuoy, ChevronDown, SlidersHorizontal, Send } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Modal } from "@/components/ui";
 import { PushHelp } from "@/components/push-help";
@@ -33,8 +33,21 @@ export function PushPermissionGate() {
   const [platform, setPlatform] = useState<Platform>("desktop");
   const [iosBrowser, setIosBrowser] = useState(false);
 
+  const [tested, setTested] = useState<number | null>(null);
+  const [testError, setTestError] = useState<string | null>(null);
+
   const subscribe = api.push.subscribe.useMutation();
   const unsubscribe = api.push.unsubscribe.useMutation();
+  const test = api.push.test.useMutation({
+    onSuccess: (result) => {
+      setTested(result.delivered);
+      setTestError(null);
+    },
+    onError: (err) => {
+      setTested(null);
+      setTestError(err.message);
+    },
+  });
   const { data: polls } = api.poll.listActive.useQuery();
   const pollPending = (polls ?? []).some((p) => p.myVote === null);
 
@@ -133,10 +146,31 @@ export function PushPermissionGate() {
         {error && (
           <div className="space-y-2">
             <p className="text-sm text-red-400">{error}</p>
-            <Button size="sm" variant="secondary" onClick={() => setShowHelp((v) => !v)}>
-              <LifeBuoy className="h-3.5 w-3.5" /> ¿Cómo lo soluciono?
-              <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showHelp && "rotate-180")} />
-            </Button>
+            {tested !== null && (
+              <p className="rounded-xl bg-accent/10 p-3 text-sm text-accent">
+                Prueba enviada a {tested} {tested === 1 ? "dispositivo" : "dispositivos"} ✅ Si te
+                llega, el permiso ya está concedido en alguno de ellos.
+              </p>
+            )}
+            {testError && <p className="text-sm text-red-400">Prueba fallida: {testError}</p>}
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setShowHelp((v) => !v)}>
+                <LifeBuoy className="h-3.5 w-3.5" /> ¿Cómo lo soluciono?
+                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showHelp && "rotate-180")} />
+              </Button>
+              {/* Diagnóstico extra: revela si el fallo es de este dispositivo
+                  o del envío en sí. */}
+              <Button
+                size="sm" variant="secondary" loading={test.isLoading}
+                onClick={() => {
+                  setTested(null);
+                  setTestError(null);
+                  test.mutate();
+                }}
+              >
+                <Send className="h-3.5 w-3.5" /> Probar envío
+              </Button>
+            </div>
             {showHelp && <PushHelp platform={platform} denied={denied} />}
           </div>
         )}

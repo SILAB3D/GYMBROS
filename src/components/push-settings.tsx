@@ -21,21 +21,30 @@ export function PushSettings() {
   const [isIosBrowser, setIsIosBrowser] = useState(false);
   const [platform, setPlatform] = useState<Platform>("desktop");
 
+  // El resultado de la prueba es independiente del error de activación: si el
+  // alta falla, la prueba sigue siendo útil como diagnóstico aparte.
   const [tested, setTested] = useState<number | null>(null);
+  const [testError, setTestError] = useState<string | null>(null);
 
   const subscribe = api.push.subscribe.useMutation();
   const unsubscribe = api.push.unsubscribe.useMutation();
   const test = api.push.test.useMutation({
     onSuccess: (result) => {
       setTested(result.delivered);
-      setError(null);
+      setTestError(null);
     },
     onError: (err) => {
       setTested(null);
-      setError(err.message);
+      setTestError(err.message);
       setShowHelp(true);
     },
   });
+
+  function runTest() {
+    setTested(null);
+    setTestError(null);
+    test.mutate();
+  }
 
   useEffect(() => {
     const ok = pushSupported();
@@ -107,37 +116,13 @@ export function PushSettings() {
           GymBros desde el icono nuevo y vuelve aquí para activarlas (requiere iOS 16.4+).
         </p>
       ) : subscribed ? (
-        <div className="space-y-2">
-          <div className="flex flex-wrap gap-2">
-            <Button
-              loading={test.isLoading}
-              onClick={() => {
-                setTested(null);
-                setError(null);
-                setShowHelp(false);
-                test.mutate();
-              }}
-            >
-              <Send className="h-4 w-4" /> Enviar notificación de prueba
-            </Button>
-            <Button variant="secondary" loading={busy} onClick={disable}>
-              <BellOff className="h-4 w-4" /> Desactivar
-            </Button>
-          </div>
-          {tested !== null && (
-            <p className="rounded-xl bg-accent/10 p-3 text-sm text-accent">
-              Enviada a {tested} {tested === 1 ? "dispositivo" : "dispositivos"} ✅ Si te llega,
-              los permisos están bien concedidos. Si no aparece en unos segundos, pulsa «¿Cómo lo
-              soluciono?».
-            </p>
-          )}
-          {tested !== null && (
-            <Button size="sm" variant="ghost" onClick={() => setShowHelp((v) => !v)}>
-              <LifeBuoy className="h-3.5 w-3.5" /> No me ha llegado
-              <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showHelp && "rotate-180")} />
-            </Button>
-          )}
-          {tested !== null && showHelp && <PushHelp platform={platform} denied={denied} />}
+        <div className="flex flex-wrap gap-2">
+          <Button loading={test.isLoading} onClick={runTest}>
+            <Send className="h-4 w-4" /> Enviar notificación de prueba
+          </Button>
+          <Button variant="secondary" loading={busy} onClick={disable}>
+            <BellOff className="h-4 w-4" /> Desactivar
+          </Button>
         </div>
       ) : (
         <Button loading={busy} onClick={enable}>
@@ -145,13 +130,33 @@ export function PushSettings() {
         </Button>
       )}
 
-      {error && (
+      {/* Resultado de la prueba de envío */}
+      {tested !== null && (
+        <p className="rounded-xl bg-accent/10 p-3 text-sm text-accent">
+          Enviada a {tested} {tested === 1 ? "dispositivo" : "dispositivos"} ✅ Si te llega, los
+          permisos están bien concedidos. Si no aparece en unos segundos, mira las indicaciones.
+        </p>
+      )}
+      {testError && <p className="text-sm text-red-400">Prueba fallida: {testError}</p>}
+
+      {error && <p className="text-sm text-red-400">{error}</p>}
+
+      {(error || testError || tested !== null) && (
         <div className="space-y-2">
-          <p className="text-sm text-red-400">{error}</p>
-          <Button size="sm" variant="secondary" onClick={() => setShowHelp((v) => !v)}>
-            <LifeBuoy className="h-3.5 w-3.5" /> ¿Cómo lo soluciono?
-            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showHelp && "rotate-180")} />
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setShowHelp((v) => !v)}>
+              <LifeBuoy className="h-3.5 w-3.5" />
+              {tested !== null && !error ? "No me ha llegado" : "¿Cómo lo soluciono?"}
+              <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showHelp && "rotate-180")} />
+            </Button>
+            {/* Tras un alta fallida, la prueba es un diagnóstico extra: revela
+                si el problema está en este dispositivo o en el envío. */}
+            {!subscribed && (
+              <Button size="sm" variant="secondary" loading={test.isLoading} onClick={runTest}>
+                <Send className="h-3.5 w-3.5" /> Probar envío
+              </Button>
+            )}
+          </div>
           {showHelp && <PushHelp platform={platform} denied={denied} />}
         </div>
       )}

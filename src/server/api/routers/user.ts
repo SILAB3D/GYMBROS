@@ -4,6 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { startOfISOWeek, endOfISOWeek } from "date-fns";
 import { createTRPCRouter, publicProcedure, protectedProcedure } from "@/server/api/trpc";
 import { effectiveWeekStreak, streaksForUsers } from "@/server/services/streak";
+import { trainingProfiles, affinityBetween } from "@/server/services/affinity";
 
 export const userRouter = createTRPCRouter({
   register: publicProcedure
@@ -219,7 +220,7 @@ export const userRouter = createTRPCRouter({
 
   list: protectedProcedure.query(async ({ ctx }) => {
     const me = ctx.session.user.id;
-    const [users, routineExercises] = await Promise.all([
+    const [users, profiles] = await Promise.all([
       ctx.db.user.findMany({
         select: {
           id: true, name: true, avatarUrl: true,
@@ -227,35 +228,30 @@ export const userRouter = createTRPCRouter({
         },
         orderBy: { name: "asc" },
       }),
-      // Qué ejercicios entrena cada uno, según sus rutinas
-      ctx.db.routineExercise.findMany({
-        select: { exerciseId: true, routine: { select: { userId: true } } },
-      }),
+      trainingProfiles(ctx.db),
     ]);
     const streaks = await streaksForUsers(ctx.db, users);
-
-    // Afinidad: ejercicios que compartís sobre el total de los que entrenáis
-    // entre los dos (índice de Jaccard), así una rutina larga no infla el dato.
-    const byUser = new Map<string, Set<string>>();
-    for (const re of routineExercises) {
-      const set = byUser.get(re.routine.userId) ?? new Set<string>();
-      set.add(re.exerciseId);
-      byUser.set(re.routine.userId, set);
-    }
-    const mine = byUser.get(me) ?? new Set<string>();
+    const myProfile = profiles.get(me);
 
     return users.map(({ lastCompletedWeek, weeklyTargetDays, ...u }) => {
-      const theirs = byUser.get(u.id) ?? new Set<string>();
-      const common = Array.from(theirs).filter((id) => mine.has(id)).length;
-      const union = mine.size + theirs.size - common;
-      const comparable = u.id !== me && mine.size > 0 && theirs.size > 0;
+      const profile = profiles.get(u.id);
+      const affinity = u.id === me ? null : affinityBetween(myProfile, profile);
       return {
         ...u,
         currentStreak: streaks.get(u.id) ?? 0,
         isMe: u.id === me,
-        affinity: comparable ? Math.round((common / union) * 100) : null,
-        commonExercises: comparable ? common : 0,
-        exerciseCount: theirs.size,
+        affinity,
+        // Datos de su forma de entrenar, para explicar de dónde sale el número
+        profile: profile
+          ? {
+              weekly: profile.weekly,
+              avgExercises: Math.round(profile.avgExercises * 10) / 10,
+              avgSets: Math.round(profile.avgSets * 10) / 10,
+              topMuscle: profile.topMuscle,
+              routines: profile.routines,
+            }
+          : null,
+        myProfileEmpty: !myProfile || myProfile.routines === 0,
       };
     });
   }),
