@@ -125,14 +125,18 @@ export default function ActiveWorkoutPage() {
         </div>
       </div>
 
-      {/* Progreso del entrenamiento */}
-      <Card className="space-y-2 py-3">
-        <div className="flex items-center justify-between text-sm">
-          <span className="font-medium">Progreso</span>
-          <span className="text-muted">{doneSets}/{totalSets} series · {pct}%</span>
-        </div>
-        <ProgressBar value={pct} />
-      </Card>
+      {/* Progreso del entrenamiento: se queda pegado arriba al hacer scroll,
+          justo debajo de la cabecera fija del móvil, para no perderlo de vista
+          en rutinas largas. El fondo es opaco porque debajo pasa contenido. */}
+      <div className="sticky top-[3.5rem] z-30 -mx-4 bg-bg/85 px-4 py-2 backdrop-blur-xl md:top-0 md:-mx-8 md:px-8 md:py-3">
+        <Card className="space-y-2 py-3">
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-medium">Progreso</span>
+            <span className="text-muted">{doneSets}/{totalSets} series · {pct}%</span>
+          </div>
+          <ProgressBar value={pct} />
+        </Card>
+      </div>
 
       <RestTimer />
 

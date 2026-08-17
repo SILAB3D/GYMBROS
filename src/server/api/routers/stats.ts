@@ -28,6 +28,32 @@ function computeTrend(volumes: number[]): { direction: TrendDirection; changePct
   return { direction, changePct };
 }
 
+/**
+ * Tendencia de una rutina completa: mismo cálculo que por ejercicio, pero sobre
+ * el volumen total de cada sesión de esa rutina.
+ *
+ * La unidad se elige según lo que haya: si en alguna sesión se levantó peso se
+ * mide en kg, y si la rutina es solo de ejercicios sin peso (dominadas,
+ * plancha…) se cae a repeticiones, que si no todas las sesiones valdrían 0.
+ */
+function routineTrend(sessions: Map<string, { date: Date; kg: number; reps: number }> | undefined) {
+  const list = Array.from(sessions?.values() ?? []).sort(
+    (a, b) => a.date.getTime() - b.date.getTime(),
+  );
+  const useKg = list.some((s) => s.kg > 0);
+  const volumes = list.map((s) => (useKg ? s.kg : s.reps));
+  const { direction, changePct } = computeTrend(volumes);
+  return {
+    unit: useKg ? ("kg" as const) : ("reps" as const),
+    sessions: list.length,
+    last: volumes.at(-1) ?? null,
+    best: volumes.length > 0 ? Math.max(...volumes) : null,
+    lastDate: list.at(-1)?.date ?? null,
+    direction,
+    changePct,
+  };
+}
+
 export const statsRouter = createTRPCRouter({
   /**
    * Tendencia del volumen de entrenamiento de cada ejercicio de una rutina.
@@ -56,7 +82,7 @@ export const statsRouter = createTRPCRouter({
         where: { workout: { userId, endedAt: { not: null } } },
         select: {
           exerciseId: true,
-          workout: { select: { startedAt: true } },
+          workout: { select: { id: true, startedAt: true, routineId: true } },
           sets: { select: { reps: true, weight: true, completed: true } },
         },
         orderBy: { workout: { startedAt: "asc" } },
@@ -65,6 +91,9 @@ export const statsRouter = createTRPCRouter({
 
     // Historial por ejercicio, una entrada por sesión (kg levantados y reps)
     const history = new Map<string, Array<{ date: Date; kg: number; reps: number }>>();
+    // Y el mismo dato agregado por sesión completa de cada rutina, para poder
+    // medir si la rutina entera avanza aunque algún ejercicio suelto no lo haga.
+    const routineSessions = new Map<string, Map<string, { date: Date; kg: number; reps: number }>>();
     for (const we of workoutExercises) {
       let kg = 0;
       let reps = 0;
@@ -77,6 +106,15 @@ export const statsRouter = createTRPCRouter({
       const list = history.get(we.exerciseId) ?? [];
       list.push({ date: we.workout.startedAt, kg, reps });
       history.set(we.exerciseId, list);
+
+      const routineId = we.workout.routineId;
+      if (!routineId) continue; // entreno libre: no cuenta para ninguna rutina
+      const sessions = routineSessions.get(routineId) ?? new Map();
+      const acc = sessions.get(we.workout.id) ?? { date: we.workout.startedAt, kg: 0, reps: 0 };
+      acc.kg += kg;
+      acc.reps += reps;
+      sessions.set(we.workout.id, acc);
+      routineSessions.set(routineId, sessions);
     }
 
     return routines.map((routine) => ({
@@ -84,6 +122,7 @@ export const statsRouter = createTRPCRouter({
       name: routine.name,
       emoji: routine.emoji,
       color: routine.color,
+      overall: routineTrend(routineSessions.get(routine.id)),
       exercises: routine.exercises.map((re) => {
         const noWeight = re.exercise.noWeight;
         const sessions = history.get(re.exercise.id) ?? [];

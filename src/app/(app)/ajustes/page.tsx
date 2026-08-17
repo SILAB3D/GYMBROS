@@ -13,14 +13,17 @@ import { AdminView } from "@/components/views/admin-view";
 import { PushSettings } from "@/components/push-settings";
 import { useViewAsUser } from "@/lib/use-view-as-user";
 import { useTutorialLaunch } from "@/lib/use-tutorial-launch";
+import { cn } from "@/lib/utils";
 
-const NOTIFY_CATEGORIES: Array<{ key: string; label: string }> = [
-  { key: "prs", label: "PRs del grupo" },
-  { key: "workouts", label: "Entrenos del grupo" },
-  { key: "streaks", label: "Rachas y semanas" },
-  { key: "reminders", label: "Recordatorios de entreno" },
-  { key: "announcements", label: "Avisos del administrador" },
-  { key: "system", label: "Sistema, encuestas y logros" },
+// El `hint` evita la confusión de no saber qué apaga cada interruptor: las
+// encuestas del admin, por ejemplo, viajan en «Sistema», no en «Avisos».
+const NOTIFY_CATEGORIES: Array<{ key: string; label: string; hint: string }> = [
+  { key: "prs", label: "PRs del grupo", hint: "Cuando alguien bate un récord" },
+  { key: "workouts", label: "Entrenos del grupo", hint: "Cuando alguien empieza a entrenar" },
+  { key: "streaks", label: "Rachas y semanas", hint: "Tu racha en peligro o cumplida" },
+  { key: "reminders", label: "Recordatorios de entreno", hint: "El aviso diario para no fallar" },
+  { key: "announcements", label: "Avisos del administrador", hint: "Mensajes que el admin envía al grupo" },
+  { key: "system", label: "Sistema, encuestas y logros", hint: "Encuestas, logros y avisos de la app" },
 ];
 
 function resizeImage(file: File, size = 192): Promise<string> {
@@ -165,7 +168,10 @@ export default function SettingsPage() {
               const on = prefs[c.key] !== false;
               return (
                 <div key={c.key} className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-muted">{c.label}</span>
+                  <span className="min-w-0">
+                    <span className={cn("block text-sm", on ? "text-fg" : "text-muted")}>{c.label}</span>
+                    <span className="block text-xs text-muted/80">{c.hint}</span>
+                  </span>
                   <Toggle on={on} onClick={() => update.mutate({ notifyPrefs: { ...prefs, [c.key]: !on } })} />
                 </div>
               );

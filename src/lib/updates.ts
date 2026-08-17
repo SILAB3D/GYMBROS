@@ -47,6 +47,14 @@ export type AppUpdate = {
 /** De la más reciente a la más antigua. */
 export const APP_UPDATES: AppUpdate[] = [
   {
+    id: "v3.13-entreno-y-progreso",
+    date: "2026-08-17",
+    emoji: "🏋️",
+    title: "Vuelta rápida al entreno y más progreso",
+    description:
+      "Si sales de un entrenamiento, abajo a la izquierda te queda un botón para volver. La barra de progreso ahora se queda fija arriba mientras haces scroll, en Progreso verás cómo avanza la rutina entera además de cada ejercicio, y tus puntos se pueden mirar día a día. Además, la alarma del descanso ya no te corta la música y las encuestas respetan tus ajustes de notificaciones.",
+  },
+  {
     id: "v3.12-recuperar-contrasena",
     date: "2026-08-17",
     emoji: "🔑",

@@ -4,7 +4,9 @@ import { useState } from "react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { TrendingUp, TrendingDown, Minus, HelpCircle } from "lucide-react";
+import type { inferRouterOutputs } from "@trpc/server";
 import { api } from "@/trpc/react";
+import type { AppRouter } from "@/server/api/root";
 import { Card, Spinner, EmptyState } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
@@ -73,10 +75,55 @@ function TrendBar({ changePct, className }: { changePct: number | null; classNam
   );
 }
 
+type RoutineTrend = inferRouterOutputs<AppRouter>["stats"]["routineTrends"][number];
+
 /**
- * Progreso por ejercicio: un cuadro compacto por ejercicio de la rutina con la
- * tendencia de su volumen de entrenamiento a lo largo del tiempo (media de las
- * 3 últimas sesiones frente a las 3 anteriores).
+ * Tendencia de la rutina completa: la suma del volumen de todas sus sesiones.
+ * Es el titular que faltaba, porque una rutina puede ir hacia arriba aunque un
+ * par de ejercicios sueltos estén estancados (y al revés).
+ */
+function RoutineOverall({ routine }: { routine: RoutineTrend }) {
+  const o = routine.overall;
+  const style = STYLES[o.direction as Direction];
+  const Icon = style.icon;
+  const pct = o.changePct;
+
+  return (
+    <div className={cn("space-y-3 rounded-2xl border p-4", style.card)}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs uppercase tracking-wide text-muted">Rutina completa</p>
+          <p className="truncate text-lg font-bold">
+            {routine.emoji} {routine.name}
+          </p>
+        </div>
+        <span className={cn("flex shrink-0 items-center gap-1 text-lg font-bold", style.text)}>
+          <Icon className="h-5 w-5" />
+          {pct === null ? "—" : `${pct > 0 ? "+" : ""}${pct.toFixed(0)}%`}
+        </span>
+      </div>
+
+      <TrendBar changePct={pct} className={style.text} />
+
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-xs">
+        <span className={cn("font-semibold", style.text)}>{style.label}</span>
+        <span className="text-muted">
+          {o.sessions === 0
+            ? "Sin sesiones registradas"
+            : `${o.sessions} ${o.sessions === 1 ? "sesión" : "sesiones"}`}
+          {o.last !== null && ` · última ${nf.format(o.last)} ${o.unit === "kg" ? "kg" : "reps"}`}
+          {o.best !== null && ` · mejor ${nf.format(o.best)}`}
+          {o.lastDate && ` · ${format(o.lastDate, "d MMM yyyy", { locale: es })}`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Progreso de entrenamiento: primero la rutina completa y después un cuadro
+ * compacto por cada ejercicio, con la tendencia de su volumen a lo largo del
+ * tiempo (media de las 3 últimas sesiones frente a las 3 anteriores).
  */
 export function ProgressView() {
   const { data: routines, isLoading } = api.stats.routineTrends.useQuery();
@@ -99,7 +146,7 @@ export function ProgressView() {
   return (
     <div className="space-y-5">
       <div className="space-y-1">
-        <h1 className="text-2xl font-bold">Progreso por ejercicio</h1>
+        <h1 className="text-2xl font-bold">Progreso</h1>
         <p className="text-sm text-muted">
           Volumen de las 3 últimas sesiones frente a las 3 anteriores.{" "}
           <span className="text-accent">Verde</span> si subes más de un 5%,{" "}
@@ -125,6 +172,13 @@ export function ProgressView() {
           </button>
         ))}
       </div>
+
+      {/* Progreso de la rutina entera, antes del detalle ejercicio a ejercicio */}
+      <RoutineOverall routine={routine} />
+
+      <h2 className="pt-1 text-sm font-semibold uppercase tracking-wide text-muted">
+        Por ejercicio
+      </h2>
 
       {routine.exercises.length === 0 ? (
         <EmptyState icon="🗒️" title="Esta rutina no tiene ejercicios" />
@@ -173,7 +227,9 @@ export function ProgressView() {
       <Card className="py-3 text-xs text-muted">
         El volumen de una sesión son los kg levantados (peso × repeticiones de las series
         completadas). En los ejercicios marcados como «sin peso» se cuentan las repeticiones
-        totales. En la barra, el 0% está en el centro: el avance crece hacia la derecha y el
+        totales. El de la rutina completa suma el de todos sus ejercicios en cada sesión, así que
+        puede avanzar aunque algún ejercicio suelto se estanque. En la barra, el 0% está en el
+        centro: el avance crece hacia la derecha y el
         retroceso hacia la izquierda, con la escala llena a ±{SCALE_PCT}%. Por debajo de ±
         {FLAT_PCT}% se considera estancamiento. Hacen falta al menos 2 sesiones para calcular una
         tendencia.

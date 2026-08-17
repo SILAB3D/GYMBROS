@@ -90,7 +90,11 @@ export default function PublicProfilePage() {
           <h2 className="mb-3 flex items-center gap-2 font-semibold">
             <Trophy className="h-4 w-4 text-gold" /> Puntos
           </h2>
-          <PointsBreakdown items={data.pointsBreakdown} total={data.totalPoints} />
+          <PointsBreakdown
+            items={data.pointsBreakdown}
+            total={data.totalPoints}
+            userId={params.id}
+          />
         </Card>
       </div>
 

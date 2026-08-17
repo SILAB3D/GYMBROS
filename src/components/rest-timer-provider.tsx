@@ -15,17 +15,39 @@ import { cn } from "@/lib/utils";
  *   se guarda en localStorage, por lo que también aguanta una recarga.
  * - Mientras corre se muestra un banner flotante común a todas las pestañas
  *   (salvo si en pantalla ya hay un temporizador completo montado).
- * - Al llegar a 0 vibra con fuerza y suena una alarma real (<audio> + Media
- *   Session): al pedir el foco de audio del sistema, la música o el vídeo que
- *   estuviera sonando se pausa. El pitido sintetizado con Web Audio se mantiene
- *   como respaldo porque se programa en el reloj del AudioContext y suena a su
- *   hora aunque el navegador congele los temporizadores en segundo plano.
+ * - Al llegar a 0 vibra con fuerza y suena una alarma real (<audio>). El pitido
+ *   sintetizado con Web Audio se mantiene como respaldo porque se programa en
+ *   el reloj del AudioContext y suena a su hora aunque el navegador congele los
+ *   temporizadores en segundo plano.
  */
 
 const STORAGE_KEY = "gymbros-rest-timer";
 const PREFS_KEY = "gymbros-rest-timer-prefs";
 /** Duración del archivo de alarma; ver public/timer-alarm.wav. */
 const ALARM_MS = 6000;
+
+/**
+ * Declara qué clase de sonido vamos a emitir, para no cargarnos la música que
+ * el usuario tenga puesta mientras entrena.
+ *
+ * - "transient-solo": alarma corta. El sistema pausa lo que estuviera sonando y
+ *   lo REANUDA solo al terminar. Es lo que queremos.
+ * - "ambient": se mezcla sin interrumpir nada. Se usa en reposo y para el
+ *   desbloqueo silencioso del <audio>, que si no roba el foco al arrancar.
+ *
+ * Antes se usaba "playback", que marca el sonido como reproducción principal:
+ * el sistema le quita el foco a Spotify y ya no vuelve, que era justo el
+ * problema. Ojo: en iOS los tipos transitorios respetan el interruptor de
+ * silencio, así que con el móvil en silencio la alarma no sonará (sí vibra).
+ */
+function setAudioSession(type: "ambient" | "transient-solo") {
+  try {
+    const nav = navigator as Navigator & { audioSession?: { type: string } };
+    if (nav.audioSession) nav.audioSession.type = type;
+  } catch {
+    /* API no soportada: el navegador decide por su cuenta */
+  }
+}
 
 type RestTimerContextValue = {
   running: boolean;
@@ -154,13 +176,8 @@ export function RestTimerProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* sin vibración */
     }
-    if (typeof navigator !== "undefined" && "mediaSession" in navigator) {
-      try {
-        navigator.mediaSession.playbackState = "none";
-      } catch {
-        /* no soportado */
-      }
-    }
+    // Devolver el foco cuanto antes: así la música que se pausó se reanuda sola
+    setAudioSession("ambient");
   }, []);
 
   /** Programa el pitido de respaldo en el reloj del AudioContext. */
@@ -210,26 +227,11 @@ export function RestTimerProvider({ children }: { children: React.ReactNode }) {
 
     if (!soundOnRef.current) return;
 
-    // Pedir el foco de audio del sistema para que la música en curso se pause.
-    // audioSession es la API estándar (Safari 16.4+/Chromium); "playback" marca
-    // el sonido como no mezclable, así que interrumpe en vez de solaparse.
-    try {
-      const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
-      if (session) session.type = "playback";
-    } catch {
-      /* no soportado */
-    }
-    if ("mediaSession" in navigator) {
-      try {
-        navigator.mediaSession.metadata = new MediaMetadata({
-          title: "Descanso terminado",
-          artist: "GymBros",
-        });
-        navigator.mediaSession.playbackState = "playing";
-      } catch {
-        /* no soportado */
-      }
-    }
+    // Alarma corta: se pide el foco en modo transitorio, de forma que la música
+    // se pause y vuelva sola. Tampoco se declara metadata de Media Session: al
+    // hacerlo nos convertíamos en el reproductor activo del sistema y el otro
+    // reproductor perdía sus controles para siempre.
+    setAudioSession("transient-solo");
     const audio = audioRef.current;
     if (audio) {
       audio.currentTime = 0;
@@ -312,6 +314,8 @@ export function RestTimerProvider({ children }: { children: React.ReactNode }) {
 
       // Desbloqueo del <audio> aprovechando el gesto del usuario: sin esta
       // reproducción silenciosa, el navegador bloquearía el play() automático.
+      // En modo "ambient" para que este play() mudo no corte la música.
+      setAudioSession("ambient");
       const audio = audioRef.current;
       if (audio) {
         audio.volume = 0;

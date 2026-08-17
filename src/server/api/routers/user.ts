@@ -138,6 +138,51 @@ export const userRouter = createTRPCRouter({
     }),
 
   // Perfil público: solo datos visibles para el grupo. Nunca métricas corporales.
+  /**
+   * Historial de puntos agrupado por día, del más reciente al más antiguo.
+   *
+   * Sirve tanto para el panel propio como para el perfil de cualquier miembro:
+   * el desglose por categoría dice EN QUÉ se ganaron los puntos, pero no
+   * CUÁNDO, que es justo lo que hace falta para entender una subida o un
+   * parón en el ranking.
+   */
+  pointsHistory: protectedProcedure
+    .input(
+      z.object({
+        userId: z.string().optional(), // por defecto, uno mismo
+        days: z.number().int().min(1).max(365).default(90),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const userId = input.userId ?? ctx.session.user.id;
+      const from = new Date();
+      from.setHours(0, 0, 0, 0);
+      from.setDate(from.getDate() - input.days);
+
+      const events = await ctx.db.pointEvent.findMany({
+        where: { userId, date: { gte: from } },
+        select: { id: true, type: true, points: true, date: true },
+        orderBy: { date: "desc" },
+      });
+
+      // Se agrupa por día natural conservando el orden descendente de la query
+      const byDay = new Map<string, { date: Date; total: number; items: typeof events }>();
+      for (const e of events) {
+        const key = e.date.toISOString().slice(0, 10);
+        const day = byDay.get(key) ?? { date: e.date, total: 0, items: [] };
+        day.total += e.points;
+        day.items.push(e);
+        byDay.set(key, day);
+      }
+
+      const days = Array.from(byDay.entries()).map(([key, d]) => ({ key, ...d }));
+      return {
+        days,
+        total: events.reduce((acc, e) => acc + e.points, 0),
+        sinceDays: input.days,
+      };
+    }),
+
   publicProfile: protectedProcedure
     .input(z.object({ userId: z.string() }))
     .query(async ({ ctx, input }) => {

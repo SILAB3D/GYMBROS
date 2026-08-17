@@ -81,6 +81,31 @@ export const workoutRouter = createTRPCRouter({
     });
   }),
 
+  /**
+   * Versión ligera de `active` para el botón flotante, que se consulta en
+   * TODAS las pantallas: devuelve solo lo que se pinta y no arrastra las series
+   * ni dispara los efectos de autocierre.
+   */
+  activeBadge: protectedProcedure.query(async ({ ctx }) => {
+    const workout = await ctx.db.workout.findFirst({
+      where: { userId: ctx.session.user.id, endedAt: null },
+      select: {
+        id: true,
+        startedAt: true,
+        routine: { select: { name: true, emoji: true } },
+      },
+    });
+    if (!workout) return null;
+
+    const [totalSets, doneSets] = await Promise.all([
+      ctx.db.workoutSet.count({ where: { workoutExercise: { workoutId: workout.id } } }),
+      ctx.db.workoutSet.count({
+        where: { workoutExercise: { workoutId: workout.id }, completed: true },
+      }),
+    ]);
+    return { ...workout, totalSets, doneSets };
+  }),
+
   updateSet: protectedProcedure
     .input(
       z.object({
