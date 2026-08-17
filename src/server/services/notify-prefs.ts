@@ -1,8 +1,14 @@
 import type { PrismaClient } from "@prisma/client";
 
-/** Categorías generales de notificación que cada usuario puede activar/desactivar. */
+/**
+ * Categorías generales de notificación que cada usuario puede activar/desactivar.
+ *
+ * Lo que manda el administrador —difusiones y encuestas— NO está aquí a
+ * propósito: son comunicaciones del grupo que deben llegar a todo el mundo, así
+ * que no pasan por ningún filtro de preferencias.
+ */
 export const NOTIFY_CATEGORIES = [
-  "prs", "workouts", "streaks", "reminders", "announcements", "system",
+  "prs", "workouts", "streaks", "reminders", "system",
 ] as const;
 export type NotifyCategory = (typeof NOTIFY_CATEGORIES)[number];
 
@@ -11,8 +17,7 @@ export const CATEGORY_LABELS: Record<NotifyCategory, string> = {
   workouts: "Entrenos del grupo",
   streaks: "Rachas y semanas",
   reminders: "Recordatorios de entreno",
-  announcements: "Avisos del administrador",
-  system: "Sistema, encuestas y logros",
+  system: "Sistema y logros",
 };
 
 /** Por defecto todas están activas: solo se desactiva si el usuario lo pone en false. */

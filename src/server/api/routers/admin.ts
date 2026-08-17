@@ -146,20 +146,17 @@ export const adminRouter = createTRPCRouter({
   broadcast: adminProcedure
     .input(z.object({ title: z.string().min(1).max(120), body: z.string().max(500).optional() }))
     .mutation(async ({ ctx, input }) => {
+      // Los avisos del admin llegan a todo el grupo sin excepción: no existe
+      // preferencia que los silencie, porque son la vía para comunicar cosas
+      // que nadie debería perderse.
       const users = await ctx.db.user.findMany({ select: { id: true } });
-      // Se respeta la preferencia de cada usuario: los avisos del admin tienen
-      // su propia categoría para poder silenciarlos sin perder el resto.
-      const recipients = await usersWithCategory(
-        ctx.db,
-        users.map((u) => u.id),
-        "announcements",
-      );
-      if (recipients.length === 0) return { sent: 0, skipped: users.length };
+      const recipients = users.map((u) => u.id);
+      if (recipients.length === 0) return { sent: 0, skipped: 0 };
       await ctx.db.notification.createMany({
         data: recipients.map((id) => ({ userId: id, type: "SYSTEM" as const, title: input.title, body: input.body })),
       });
       await sendPushToUsers(ctx.db, recipients, { title: input.title, body: input.body });
-      return { sent: recipients.length, skipped: users.length - recipients.length };
+      return { sent: recipients.length, skipped: 0 };
     }),
 
   /**

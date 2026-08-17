@@ -15,15 +15,15 @@ import { useViewAsUser } from "@/lib/use-view-as-user";
 import { useTutorialLaunch } from "@/lib/use-tutorial-launch";
 import { cn } from "@/lib/utils";
 
-// El `hint` evita la confusión de no saber qué apaga cada interruptor: las
-// encuestas del admin, por ejemplo, viajan en «Sistema», no en «Avisos».
+// El `hint` evita la confusión de no saber qué apaga cada interruptor.
+// Los avisos y encuestas del administrador NO figuran aquí a propósito: llegan
+// siempre, así que ofrecer un interruptor sería mentir.
 const NOTIFY_CATEGORIES: Array<{ key: string; label: string; hint: string }> = [
   { key: "prs", label: "PRs del grupo", hint: "Cuando alguien bate un récord" },
   { key: "workouts", label: "Entrenos del grupo", hint: "Cuando alguien empieza a entrenar" },
   { key: "streaks", label: "Rachas y semanas", hint: "Tu racha en peligro o cumplida" },
   { key: "reminders", label: "Recordatorios de entreno", hint: "El aviso diario para no fallar" },
-  { key: "announcements", label: "Avisos del administrador", hint: "Mensajes que el admin envía al grupo" },
-  { key: "system", label: "Sistema, encuestas y logros", hint: "Encuestas, logros y avisos de la app" },
+  { key: "system", label: "Sistema y logros", hint: "Logros y avisos de la app" },
 ];
 
 function resizeImage(file: File, size = 192): Promise<string> {
@@ -164,6 +164,9 @@ export default function SettingsPage() {
           <PushSettings />
           <div className="space-y-2">
             <p className="text-sm font-medium">Categorías (todas activas por defecto)</p>
+            <p className="text-xs text-muted">
+              Los avisos y encuestas del administrador llegan siempre y no se pueden desactivar.
+            </p>
             {NOTIFY_CATEGORIES.map((c) => {
               const on = prefs[c.key] !== false;
               return (
