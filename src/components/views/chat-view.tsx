@@ -35,6 +35,7 @@ export function ChatView() {
         const optimistic = {
           id: `temp-${Date.now()}`,
           userId: myId,
+          groupId: null as string | null,
           text: newText,
           createdAt: new Date(),
           user: { id: myId, name: session?.user.name ?? "" },

@@ -3,7 +3,6 @@
 import {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
 } from "react";
-import { createPortal } from "react-dom";
 import { BellRing, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -14,10 +13,16 @@ import { cn } from "@/lib/utils";
  *   página: la cuenta atrás se deriva de una marca de tiempo objetivo y además
  *   se guarda en localStorage, por lo que también aguanta una recarga.
  * - Mientras corre se muestra un banner flotante común a todas las pestañas
- *   (salvo si en pantalla ya hay un temporizador completo montado).
- * - Al llegar a 0 vibra con fuerza y suena una alarma real (<audio>). El pitido
- *   sintetizado con Web Audio se mantiene como respaldo porque se programa en
- *   el reloj del AudioContext y suena a su hora aunque el navegador congele los
+ *   (salvo si en pantalla ya hay un temporizador completo montado). Lo coloca
+ *   <FloatingDock>, que lo apila con el aviso de entreno en curso para que no
+ *   se pisen al cambiar de pestaña.
+ * - Al llegar a 0 vibra con fuerza y lanza una NOTIFICACIÓN del sistema, que se
+ *   retira sola a los 30 segundos. El sonido lo pone la notificación: es el
+ *   canal de avisos del móvil, así que no interrumpe la música que estuviera
+ *   sonando, cosa que un sonido multimedia sí hace.
+ * - Si no hay permiso de notificaciones se cae al plan B de siempre: la alarma
+ *   en <audio> más el pitido sintetizado con Web Audio, que se programa en el
+ *   reloj del AudioContext y suena a su hora aunque el navegador congele los
  *   temporizadores en segundo plano.
  */
 
@@ -25,6 +30,47 @@ const STORAGE_KEY = "gymbros-rest-timer";
 const PREFS_KEY = "gymbros-rest-timer-prefs";
 /** Duración del archivo de alarma; ver public/timer-alarm.wav. */
 const ALARM_MS = 6000;
+/** Cuánto aguanta en pantalla la notificación de "descanso terminado". */
+const NOTIFICATION_MS = 30_000;
+/** Etiqueta fija: así un descanso nuevo reemplaza al aviso anterior. */
+const NOTIFICATION_TAG = "gymbros-rest-timer";
+
+/**
+ * Avisa con una notificación del sistema y la retira a los 30 segundos.
+ *
+ * Devuelve true si se llegó a mostrar. El sonido corre por cuenta del canal de
+ * notificaciones del dispositivo, que es justo lo que buscamos: suena sin
+ * arrebatarle la salida de audio a Spotify.
+ */
+async function notifyRestOver(withSound: boolean): Promise<boolean> {
+  try {
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return false;
+    if (!("serviceWorker" in navigator)) return false;
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (!registration) return false;
+
+    await registration.showNotification("¡Descanso terminado! 💪", {
+      body: "A por la siguiente serie.",
+      icon: "/icon-192.png",
+      badge: "/badge-96.png",
+      tag: NOTIFICATION_TAG,
+      renotify: true,
+      silent: !withSound,
+      data: { url: "/entrenar" },
+    } as NotificationOptions);
+
+    // No todos los sistemas se la llevan solos: se cierra a mano a los 30 s
+    setTimeout(() => {
+      void registration
+        .getNotifications({ tag: NOTIFICATION_TAG })
+        .then((list) => list.forEach((n) => n.close()))
+        .catch(() => undefined);
+    }, NOTIFICATION_MS);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Declara qué clase de sonido vamos a emitir, para no cargarnos la música que
@@ -64,6 +110,8 @@ type RestTimerContextValue = {
   dismiss: () => void;
   /** Lo usa <RestTimer> para que el banner flotante no se duplique. */
   registerInline: () => () => void;
+  /** ¿Toca pintar el banner flotante? Lo consulta <FloatingDock>. */
+  floatingVisible: boolean;
 };
 
 const RestTimerContext = createContext<RestTimerContextValue | null>(null);
@@ -179,6 +227,8 @@ export function RestTimerProvider({ children }: { children: React.ReactNode }) {
     // Devolver el foco cuanto antes: así la música que se pausó se reanuda sola
     setAudioSession("ambient");
   }, []);
+  const silenceRef = useRef(silence);
+  silenceRef.current = silence;
 
   /** Programa el pitido de respaldo en el reloj del AudioContext. */
   const scheduleBackupBeep = useCallback((seconds: number) => {
@@ -212,6 +262,21 @@ export function RestTimerProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  /** Plan B cuando no hay notificaciones: alarma multimedia de toda la vida. */
+  const playAlarmSound = useCallback(() => {
+    // Alarma corta: se pide el foco en modo transitorio, de forma que la música
+    // se pause y vuelva sola. Tampoco se declara metadata de Media Session: al
+    // hacerlo nos convertíamos en el reproductor activo del sistema y el otro
+    // reproductor perdía sus controles para siempre.
+    setAudioSession("transient-solo");
+    const audio = audioRef.current;
+    if (audio) {
+      audio.currentTime = 0;
+      audio.volume = 1;
+      void audio.play().catch(() => undefined);
+    }
+  }, []);
+
   const fireAlarm = useCallback(() => {
     setRinging(true);
     releaseWakeLock();
@@ -225,20 +290,17 @@ export function RestTimerProvider({ children }: { children: React.ReactNode }) {
       /* sin vibración */
     }
 
-    if (!soundOnRef.current) return;
-
-    // Alarma corta: se pide el foco en modo transitorio, de forma que la música
-    // se pause y vuelva sola. Tampoco se declara metadata de Media Session: al
-    // hacerlo nos convertíamos en el reproductor activo del sistema y el otro
-    // reproductor perdía sus controles para siempre.
-    setAudioSession("transient-solo");
-    const audio = audioRef.current;
-    if (audio) {
-      audio.currentTime = 0;
-      audio.volume = 1;
-      void audio.play().catch(() => undefined);
-    }
-  }, [releaseWakeLock]);
+    // Primero la notificación: avisa aunque la app esté en segundo plano y su
+    // sonido no corta la música. El audio solo entra si no hay permiso.
+    void notifyRestOver(soundOnRef.current).then((shown) => {
+      if (shown) {
+        // El pitido de respaldo ya no pinta nada: lo apagamos antes de que suene
+        silenceRef.current?.();
+        return;
+      }
+      if (soundOnRef.current) playAlarmSound();
+    });
+  }, [playAlarmSound, releaseWakeLock]);
 
   // ---------- Cuenta atrás ----------
 
@@ -328,7 +390,11 @@ export function RestTimerProvider({ children }: { children: React.ReactNode }) {
           })
           .catch(() => undefined);
       }
-      if (soundOnRef.current) scheduleBackupBeep(ms / 1000);
+      // El pitido de respaldo solo se programa si NO vamos a poder notificar:
+      // con permiso concedido el aviso lo da la notificación, sin tocar la
+      // música que esté sonando.
+      const canNotify = typeof Notification !== "undefined" && Notification.permission === "granted";
+      if (soundOnRef.current && !canNotify) scheduleBackupBeep(ms / 1000);
       if (keepAwake) void requestWakeLock();
     },
     [keepAwake, requestWakeLock, scheduleBackupBeep, silence],
@@ -372,8 +438,12 @@ export function RestTimerProvider({ children }: { children: React.ReactNode }) {
       stop,
       dismiss,
       registerInline,
+      floatingVisible: mounted && inlineCount === 0 && (targetAt !== null || ringing),
     }),
-    [targetAt, ringing, remaining, totalMs, soundOn, keepAwake, start, stop, dismiss, registerInline],
+    [
+      targetAt, ringing, remaining, totalMs, soundOn, keepAwake, start, stop, dismiss,
+      registerInline, mounted, inlineCount,
+    ],
   );
 
   return (
@@ -382,13 +452,15 @@ export function RestTimerProvider({ children }: { children: React.ReactNode }) {
       {/* preload="auto" para que el archivo esté en caché cuando toque sonar */}
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <audio ref={audioRef} src="/timer-alarm.wav" preload="auto" playsInline />
-      {mounted && inlineCount === 0 && (targetAt !== null || ringing) && <FloatingTimerBanner />}
     </RestTimerContext.Provider>
   );
 }
 
-/** Banner flotante común a todas las pestañas mientras el descanso corre. */
-function FloatingTimerBanner() {
+/**
+ * Banner flotante común a todas las pestañas mientras el descanso corre.
+ * No se posiciona a sí mismo: lo apila <FloatingDock>.
+ */
+export function FloatingTimerBanner() {
   const { remaining, progress, ringing, stop, dismiss } = useRestTimer();
   const secs = Math.ceil(remaining / 1000);
   const mm = Math.floor(secs / 60);
@@ -396,58 +468,53 @@ function FloatingTimerBanner() {
   const R = 15;
   const CIRC = 2 * Math.PI * R;
 
-  return createPortal(
-    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-50 flex justify-center px-4 md:bottom-6 md:left-60 md:justify-end md:px-8">
-      <div
-        className={cn(
-          "pointer-events-auto flex items-center gap-3 rounded-2xl border px-3 py-2 shadow-lg backdrop-blur-xl transition",
-          ringing
-            ? "animate-pulse border-red-500/60 bg-red-500/20"
-            : "border-border bg-surface/90",
-        )}
-      >
-        {ringing ? (
-          <>
-            <BellRing className="h-5 w-5 shrink-0 text-red-400" />
-            <span className="text-sm font-semibold">¡Descanso terminado!</span>
-            <button
-              onClick={dismiss}
-              className="rounded-lg bg-red-500/20 px-2.5 py-1 text-xs font-semibold text-red-200 transition hover:bg-red-500/30"
-            >
-              Vale
-            </button>
-          </>
-        ) : (
-          <>
-            <span className="relative h-9 w-9 shrink-0">
-              <svg viewBox="0 0 36 36" className="h-9 w-9 -rotate-90">
-                <circle cx="18" cy="18" r={R} fill="none" stroke="hsl(var(--surface-2))" strokeWidth="4" />
-                <circle
-                  cx="18" cy="18" r={R} fill="none"
-                  stroke={secs <= 5 ? "#ef4444" : "hsl(var(--accent))"}
-                  strokeWidth="4" strokeLinecap="round"
-                  strokeDasharray={CIRC}
-                  strokeDashoffset={CIRC * (1 - progress)}
-                />
-              </svg>
-            </span>
-            <div className="leading-tight">
-              <p className="text-xs text-muted">Descansando…</p>
-              <p className={cn("text-sm font-bold tabular-nums", secs <= 5 && "text-red-400")}>
-                {mm}:{String(ss).padStart(2, "0")}
-              </p>
-            </div>
-            <button
-              onClick={stop}
-              aria-label="Cancelar descanso"
-              className="rounded-lg p-1.5 text-muted transition hover:text-fg"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </>
-        )}
-      </div>
-    </div>,
-    document.body,
+  return (
+    <div
+      className={cn(
+        "pointer-events-auto flex items-center gap-3 rounded-2xl border px-3 py-2 shadow-lg backdrop-blur-xl transition",
+        ringing ? "animate-pulse border-red-500/60 bg-red-500/20" : "border-border bg-surface/90",
+      )}
+    >
+      {ringing ? (
+        <>
+          <BellRing className="h-5 w-5 shrink-0 text-red-400" />
+          <span className="text-sm font-semibold">¡Descanso terminado!</span>
+          <button
+            onClick={dismiss}
+            className="rounded-lg bg-red-500/20 px-2.5 py-1 text-xs font-semibold text-red-200 transition hover:bg-red-500/30"
+          >
+            Vale
+          </button>
+        </>
+      ) : (
+        <>
+          <span className="relative h-9 w-9 shrink-0">
+            <svg viewBox="0 0 36 36" className="h-9 w-9 -rotate-90">
+              <circle cx="18" cy="18" r={R} fill="none" stroke="hsl(var(--surface-2))" strokeWidth="4" />
+              <circle
+                cx="18" cy="18" r={R} fill="none"
+                stroke={secs <= 5 ? "#ef4444" : "hsl(var(--accent))"}
+                strokeWidth="4" strokeLinecap="round"
+                strokeDasharray={CIRC}
+                strokeDashoffset={CIRC * (1 - progress)}
+              />
+            </svg>
+          </span>
+          <div className="leading-tight">
+            <p className="text-xs text-muted">Descansando…</p>
+            <p className={cn("text-sm font-bold tabular-nums", secs <= 5 && "text-red-400")}>
+              {mm}:{String(ss).padStart(2, "0")}
+            </p>
+          </div>
+          <button
+            onClick={stop}
+            aria-label="Cancelar descanso"
+            className="rounded-lg p-1.5 text-muted transition hover:text-fg"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </>
+      )}
+    </div>
   );
 }

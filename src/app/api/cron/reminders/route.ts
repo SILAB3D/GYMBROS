@@ -5,6 +5,7 @@ import { dispatchDuePolls } from "@/server/services/poll-dispatch";
 import { notifyUserFromTemplate } from "@/server/services/notify-templates";
 import { notify } from "@/server/services/gamification";
 import { weekStreakState } from "@/server/services/streak";
+import { purgeExpiredDeletions } from "@/server/services/account-deletion";
 
 export const dynamic = "force-dynamic";
 
@@ -19,10 +20,13 @@ export async function GET(req: Request) {
   }
 
   await dispatchDuePolls(db);
+  // Fase 2 del borrado de cuenta: los que ya agotaron el plazo desaparecen
+  const purged = await purgeExpiredDeletions(db);
 
   const now = new Date();
   const weekStart = startOfISOWeek(now);
-  const users = await db.user.findMany();
+  // A quien está de salida no se le dan las buenas noches
+  const users = await db.user.findMany({ where: { deletionRequestedAt: null } });
   let sent = 0;
 
   for (const user of users) {
@@ -104,5 +108,5 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, users: users.length, sent });
+  return NextResponse.json({ ok: true, users: users.length, sent, purged });
 }

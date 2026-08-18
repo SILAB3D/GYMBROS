@@ -36,7 +36,12 @@ export async function notify(
   await sendPushToUsers(db, [userId], { title, body });
 }
 
-/** Notifica a todos los miembros del grupo excepto al autor. */
+/**
+ * Notifica a quienes comparten grupo con el autor, menos a él.
+ *
+ * Con varios grupos, "los demás" ya no son todos los usuarios de la app: son
+ * los de SUS grupos, sin repetir a quien coincida en más de uno.
+ */
 export async function notifyOthers(
   db: PrismaClient,
   exceptUserId: string,
@@ -45,11 +50,16 @@ export async function notifyOthers(
   body?: string,
   category: NotifyCategory = "system",
 ) {
-  const others = await db.user.findMany({
-    where: { id: { not: exceptUserId } },
-    select: { id: true },
+  const others = await db.groupMember.findMany({
+    where: {
+      userId: { not: exceptUserId },
+      user: { deletionRequestedAt: null },
+      group: { members: { some: { userId: exceptUserId } } },
+    },
+    select: { userId: true },
+    distinct: ["userId"],
   });
-  const recipients = await usersWithCategory(db, others.map((u) => u.id), category);
+  const recipients = await usersWithCategory(db, others.map((u) => u.userId), category);
   if (recipients.length === 0) return;
   await db.notification.createMany({
     data: recipients.map((id) => ({ userId: id, type, title, body })),

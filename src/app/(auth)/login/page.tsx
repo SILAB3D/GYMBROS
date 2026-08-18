@@ -53,7 +53,7 @@ export default function LoginPage() {
       <p className="mt-2 text-center text-sm text-muted">
         ¿No tienes cuenta?{" "}
         <Link href="/registro" className="text-accent hover:underline">
-          Regístrate con tu código
+          Crea un grupo o únete a uno
         </Link>
       </p>
     </Card>

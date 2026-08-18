@@ -57,19 +57,19 @@ model User {
   // El plan cambió automáticamente y conviene revisar el orden
   planNeedsReview Boolean @default(false)
 
-  routines        Routine[]
-  workouts        Workout[]
-  attendances     Attendance[]
-  personalRecords PersonalRecord[]
-  bodyMetrics     BodyMetric[]
-  pointEvents     PointEvent[]
-  notifications   Notification[]
-  achievements    UserAchievement[]
-  feedItems       FeedItem[]
-  feedLikes       FeedLike[]
-  feedComments    FeedComment[]
-  customExercises Exercise[]        @relation("CustomExercises")
-  feedbacks       Feedback[]
+  routines          Routine[]
+  workouts          Workout[]
+  attendances       Attendance[]
+  personalRecords   PersonalRecord[]
+  bodyMetrics       BodyMetric[]
+  pointEvents       PointEvent[]
+  notifications     Notification[]
+  achievements      UserAchievement[]
+  feedItems         FeedItem[]
+  feedLikes         FeedLike[]
+  feedComments      FeedComment[]
+  customExercises   Exercise[]           @relation("CustomExercises")
+  feedbacks         Feedback[]
   planSlots         PlanSlot[]
   chatMessages      ChatMessage[]
   chatReactions     ChatReaction[]
@@ -81,6 +81,66 @@ model User {
   resetTokens       PasswordResetToken[]
 
   lastChatReadAt DateTime? // para el contador de mensajes no leídos
+
+  // ---------- Grupos ----------
+  // Un mismo perfil (con la MISMA información) puede pertenecer a varios grupos.
+  memberships   GroupMember[]
+  createdGroups Group[]       @relation("GroupCreator")
+
+  /// Grupo que el usuario está mirando ahora mismo. Se guarda aquí y no en el
+  /// token de sesión porque la sesión dura un año: cambiar de grupo tiene que
+  /// notarse al instante y en todos los dispositivos.
+  activeGroupId String?
+  activeGroup   Group?  @relation("ActiveGroup", fields: [activeGroupId], references: [id], onDelete: SetNull)
+
+  // ---------- Borrado de cuenta en dos fases ----------
+  /// Momento en que el usuario pidió borrarse. Mientras no sea null el perfil
+  /// desaparece de los grupos, pero TODA su información sigue intacta.
+  /// Volver a iniciar sesión dentro del plazo de gracia lo cancela.
+  deletionRequestedAt DateTime?
+  /// Palabra aleatoria que hay que teclear para confirmar el borrado.
+  deletionWord        String?
+
+  @@index([activeGroupId])
+  @@index([deletionRequestedAt])
+}
+
+// ---------- Grupos ----------
+
+enum GroupRole {
+  MEMBER
+  ADMIN
+}
+
+/// Un grupo es el contorno de todo lo social: ranking, chat, encuestas, feed y
+/// listado de miembros. Los datos personales (rutinas, entrenos, PRs, medidas)
+/// pertenecen al usuario y viajan con él a todos los grupos donde esté.
+model Group {
+  id          String   @id @default(cuid())
+  name        String
+  /// Código que hay que introducir para unirse. Siempre en mayúsculas.
+  code        String   @unique
+  createdAt   DateTime @default(now())
+  createdById String?
+  createdBy   User?    @relation("GroupCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  members      GroupMember[]
+  chatMessages ChatMessage[]
+  polls        Poll[]
+  activeFor    User[]        @relation("ActiveGroup")
+}
+
+model GroupMember {
+  id       String    @id @default(cuid())
+  groupId  String
+  group    Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     GroupRole @default(MEMBER)
+  joinedAt DateTime  @default(now())
+
+  @@unique([groupId, userId])
+  @@index([userId])
 }
 
 // ---------- Recuperación de contraseña ----------
@@ -89,13 +149,13 @@ model User {
 /// dispositivo del usuario o, si no tiene push, lo genera un admin a mano.
 /// En la base solo vive el hash: el token original únicamente viaja en la URL.
 model PasswordResetToken {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash String   @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@index([userId, createdAt])
 }
@@ -179,18 +239,18 @@ model RoutineExercise {
 // ---------- Entrenamientos ----------
 
 model Workout {
-  id          String    @id @default(cuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  routineId   String?
-  routine     Routine?  @relation(fields: [routineId], references: [id], onDelete: SetNull)
-  startedAt   DateTime  @default(now())
-  endedAt     DateTime?
-  totalVolume Float     @default(0) // kg totales levantados
-  totalSets   Int       @default(0)
-  totalReps   Int       @default(0)
-  notes       String?
-  startNotified Boolean @default(false) // ya se avisó al grupo de que empezó
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  routineId     String?
+  routine       Routine?  @relation(fields: [routineId], references: [id], onDelete: SetNull)
+  startedAt     DateTime  @default(now())
+  endedAt       DateTime?
+  totalVolume   Float     @default(0) // kg totales levantados
+  totalSets     Int       @default(0)
+  totalReps     Int       @default(0)
+  notes         String?
+  startNotified Boolean   @default(false) // ya se avisó al grupo de que empezó
 
   exercises WorkoutExercise[]
 
@@ -355,12 +415,12 @@ enum Rarity {
 }
 
 model Achievement {
-  id          String  @id @default(cuid())
-  code        String  @unique
+  id          String @id @default(cuid())
+  code        String @unique
   name        String
   description String
-  icon        String  @default("🏆")
-  rarity      Rarity  @default(COMUN)
+  icon        String @default("🏆")
+  rarity      Rarity @default(COMUN)
 
   users UserAchievement[]
 }
@@ -464,8 +524,14 @@ model ChatMessage {
   text      String
   createdAt DateTime @default(now())
 
+  // Nullable solo por los mensajes anteriores a los grupos: el script
+  // prisma/backfill-groups.ts los asigna al grupo original.
+  groupId String?
+  group   Group?  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
   reactions ChatReaction[]
 
+  @@index([groupId, createdAt])
   @@index([createdAt])
 }
 
@@ -511,6 +577,9 @@ model GymSubscription {
 
 model Poll {
   id          String    @id @default(cuid())
+  // Igual que en el chat: nullable por las encuestas previas a los grupos.
+  groupId     String?
+  group       Group?    @relation(fields: [groupId], references: [id], onDelete: Cascade)
   title       String
   description String?
   options     String[]
@@ -572,8 +641,8 @@ model UpdateSeen {
 // ---------- Plantillas de notificación (disparador fijo, contenido editable) ----------
 
 model NotificationTemplate {
-  code      String  @id // identificador del disparador
-  title     String
-  body      String?
-  enabled   Boolean @default(true)
+  code    String  @id // identificador del disparador
+  title   String
+  body    String?
+  enabled Boolean @default(true)
 }

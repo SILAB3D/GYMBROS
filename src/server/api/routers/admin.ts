@@ -7,6 +7,7 @@ import {
   usersWithCategory, NOTIFY_CATEGORIES, CATEGORY_LABELS,
 } from "@/server/services/notify-prefs";
 import { RESET_TTL_MINUTES, createResetToken, resetUrl } from "@/server/services/password-reset";
+import { groupMemberIds } from "@/server/services/group";
 
 export const adminRouter = createTRPCRouter({
   users: adminProcedure.query(async ({ ctx }) => {
@@ -146,11 +147,10 @@ export const adminRouter = createTRPCRouter({
   broadcast: adminProcedure
     .input(z.object({ title: z.string().min(1).max(120), body: z.string().max(500).optional() }))
     .mutation(async ({ ctx, input }) => {
-      // Los avisos del admin llegan a todo el grupo sin excepción: no existe
-      // preferencia que los silencie, porque son la vía para comunicar cosas
-      // que nadie debería perderse.
-      const users = await ctx.db.user.findMany({ select: { id: true } });
-      const recipients = users.map((u) => u.id);
+      // Los avisos del admin llegan a todo el grupo activo sin excepción: no
+      // existe preferencia que los silencie, porque son la vía para comunicar
+      // cosas que nadie debería perderse.
+      const recipients = await groupMemberIds(ctx.db, ctx.groupId);
       if (recipients.length === 0) return { sent: 0, skipped: 0 };
       await ctx.db.notification.createMany({
         data: recipients.map((id) => ({ userId: id, type: "SYSTEM" as const, title: input.title, body: input.body })),

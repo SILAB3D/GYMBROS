@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { createTRPCRouter, protectedProcedure, adminProcedure } from "@/server/api/trpc";
+import { createTRPCRouter, protectedProcedure, groupAdminProcedure } from "@/server/api/trpc";
 import { dispatchDuePolls } from "@/server/services/poll-dispatch";
+import { requireGroup } from "@/server/services/group";
 
 /** Próxima ocurrencia de una hora concreta en España (hoy si aún no pasó, si no mañana). */
 function nextMadridHour(hour: number): Date {
@@ -15,8 +16,9 @@ function nextMadridHour(hour: number): Date {
 }
 
 export const pollRouter = createTRPCRouter({
-  // Crear la encuesta: inmediata o programada (22h / 10h del siguiente día disponible)
-  create: adminProcedure
+  // Crear la encuesta: inmediata o programada (22h / 10h del siguiente día
+  // disponible). Solo la ve —y la responde— el grupo donde se creó.
+  create: groupAdminProcedure
     .input(
       z.object({
         title: z.string().min(2).max(120),
@@ -29,7 +31,9 @@ export const pollRouter = createTRPCRouter({
       const { schedule, ...data } = input;
       const publishAt =
         schedule === "h22" ? nextMadridHour(22) : schedule === "h10" ? nextMadridHour(10) : new Date();
-      const poll = await ctx.db.poll.create({ data: { ...data, publishAt } });
+      const poll = await ctx.db.poll.create({
+        data: { ...data, publishAt, groupId: requireGroup(ctx.groupId) },
+      });
       await dispatchDuePolls(ctx.db); // si es inmediata, avisa ya
       return poll;
     }),
@@ -38,9 +42,10 @@ export const pollRouter = createTRPCRouter({
   // Sin recuentos: los resultados solo los ve el admin.
   listActive: protectedProcedure.query(async ({ ctx }) => {
     await dispatchDuePolls(ctx.db);
+    if (!ctx.groupId) return [];
     const userId = ctx.session.user.id;
     const polls = await ctx.db.poll.findMany({
-      where: { closed: false, publishAt: { lte: new Date() } },
+      where: { closed: false, publishAt: { lte: new Date() }, groupId: ctx.groupId },
       include: {
         votes: { where: { userId }, select: { optionIndex: true } },
         snoozes: { where: { userId }, select: { count: true, until: true } },
@@ -63,6 +68,7 @@ export const pollRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const poll = await ctx.db.poll.findUnique({ where: { id: input.pollId } });
       if (!poll || poll.closed) throw new TRPCError({ code: "BAD_REQUEST", message: "La encuesta está cerrada" });
+      if (poll.groupId !== ctx.groupId) throw new TRPCError({ code: "FORBIDDEN" });
       if (input.optionIndex >= poll.options.length) throw new TRPCError({ code: "BAD_REQUEST" });
       return ctx.db.pollVote.upsert({
         where: { pollId_userId: { pollId: input.pollId, userId: ctx.session.user.id } },
@@ -90,9 +96,11 @@ export const pollRouter = createTRPCRouter({
       });
     }),
 
-  // Resultados: SOLO el admin. Incluye quién votó cada opción.
-  results: adminProcedure.query(async ({ ctx }) => {
+  // Resultados: SOLO el admin del grupo. Incluye quién votó cada opción.
+  results: groupAdminProcedure.query(async ({ ctx }) => {
+    if (!ctx.groupId) return [];
     const polls = await ctx.db.poll.findMany({
+      where: { groupId: ctx.groupId },
       include: {
         votes: {
           select: { optionIndex: true, user: { select: { id: true, name: true, avatarUrl: true } } },
@@ -117,13 +125,16 @@ export const pollRouter = createTRPCRouter({
     }));
   }),
 
-  setClosed: adminProcedure
+  setClosed: groupAdminProcedure
     .input(z.object({ id: z.string(), closed: z.boolean() }))
     .mutation(({ ctx, input }) =>
-      ctx.db.poll.update({ where: { id: input.id }, data: { closed: input.closed } }),
+      ctx.db.poll.updateMany({
+        where: { id: input.id, groupId: ctx.groupId },
+        data: { closed: input.closed },
+      }),
     ),
 
-  delete: adminProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) =>
-    ctx.db.poll.delete({ where: { id: input.id } }),
+  delete: groupAdminProcedure.input(z.object({ id: z.string() })).mutation(({ ctx, input }) =>
+    ctx.db.poll.deleteMany({ where: { id: input.id, groupId: ctx.groupId } }),
   ),
 });

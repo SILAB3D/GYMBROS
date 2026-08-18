@@ -6,6 +6,7 @@ import {
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { streaksForUsers } from "@/server/services/streak";
 import { seasonAt, seasonRange, SEASON_ANCHOR } from "@/server/services/season";
+import { groupMemberIds } from "@/server/services/group";
 
 type Period = "week" | "month" | "season" | "year";
 
@@ -40,14 +41,19 @@ function comparablePreviousRange(period: Period): { from: Date; to: Date } {
   return { from: prevFrom, to: new Date(prevFrom.getTime() + elapsedMs) };
 }
 
+/**
+ * Los puntos son del usuario y se ganan una sola vez, estén en el grupo que
+ * estén: lo que cambia de un grupo a otro es CONTRA QUIÉN se comparan.
+ */
 async function computeRanking(
   db: typeof import("@/lib/db").db,
   from: Date,
   to: Date,
+  memberIds: string[],
 ): Promise<Array<{ userId: string; points: number }>> {
   const grouped = await db.pointEvent.groupBy({
     by: ["userId"],
-    where: { date: { gte: from, lte: to } },
+    where: { date: { gte: from, lte: to }, userId: { in: memberIds } },
     _sum: { points: true },
   });
   return grouped
@@ -63,15 +69,17 @@ export const rankingRouter = createTRPCRouter({
       // Comparación por tramos equivalentes de tiempo transcurrido
       const previous = comparablePreviousRange(input.period);
 
+      const memberIds = await groupMemberIds(ctx.db, ctx.groupId);
       const [users, currentRanking, previousRanking] = await Promise.all([
         ctx.db.user.findMany({
+          where: { id: { in: memberIds } },
           select: {
             id: true, name: true, avatarUrl: true,
             currentStreak: true, lastCompletedWeek: true, weeklyTargetDays: true,
           },
         }),
-        computeRanking(ctx.db, current.from, current.to),
-        computeRanking(ctx.db, previous.from, previous.to),
+        computeRanking(ctx.db, current.from, current.to, memberIds),
+        computeRanking(ctx.db, previous.from, previous.to, memberIds),
       ]);
       const streaks = await streaksForUsers(ctx.db, users);
 
@@ -129,7 +137,11 @@ export const rankingRouter = createTRPCRouter({
 
   // Palmarés: campeones de las temporadas ya terminadas (3 meses, desde 15-ago-2026)
   seasons: protectedProcedure.query(async ({ ctx }) => {
-    const users = await ctx.db.user.findMany({ select: { id: true, name: true, avatarUrl: true } });
+    const memberIds = await groupMemberIds(ctx.db, ctx.groupId);
+    const users = await ctx.db.user.findMany({
+      where: { id: { in: memberIds } },
+      select: { id: true, name: true, avatarUrl: true },
+    });
     const byId = new Map(users.map((u) => [u.id, u]));
     const currentIndex = seasonAt().index;
 
@@ -141,7 +153,7 @@ export const rankingRouter = createTRPCRouter({
     // Solo temporadas ya terminadas (índice < actual)
     for (let idx = currentIndex - 1; idx >= 1 && seasons.length < 8; idx--) {
       const { from, to } = seasonRange(idx);
-      const ranking = await computeRanking(ctx.db, from, to);
+      const ranking = await computeRanking(ctx.db, from, to, memberIds);
       if (ranking.length === 0) continue;
       const podium = ranking.slice(0, 3).map((r) => ({
         name: byId.get(r.userId)?.name ?? "¿?",

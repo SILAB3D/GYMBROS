@@ -74,7 +74,7 @@ export function RestTimer() {
             <p className="text-sm font-medium">Descansando…</p>
             <p className="text-xs text-muted">
               {keepAwake ? "Pantalla activa · " : ""}
-              {soundOn ? "sonará al terminar 🔔" : "sin sonido"}
+              {soundOn ? "te avisará al terminar 🔔" : "sin sonido"}
             </p>
           </div>
           <button onClick={stop} className="rounded-xl p-2 text-muted transition hover:text-fg" aria-label="Cancelar">

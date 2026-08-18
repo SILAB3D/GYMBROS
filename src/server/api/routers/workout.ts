@@ -3,6 +3,40 @@ import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { finishWorkout, autoCloseStaleWorkouts, notifyWorkoutStartedIfDue } from "@/server/services/workout-service";
 
+/** Cuántas sesiones anteriores se promedian para proponer peso y reps. */
+const SUGGESTION_SAMPLE = 5;
+
+/**
+ * Media de las últimas sesiones de un ejercicio, serie a serie.
+ *
+ * Fijarse solo en el último entreno hacía que un mal día (o uno especialmente
+ * bueno) marcara el siguiente. Con la media de las últimas cinco sesiones la
+ * sugerencia refleja por dónde anda uno de verdad. Siempre en unidades enteras:
+ * nadie pone 42,5 reps ni busca discos de 0,3 kg.
+ */
+function averageSets(
+  history: Array<{ sets: Array<{ setNumber: number; reps: number; weight: number }> }>,
+): Map<number, { reps: number; weight: number }> {
+  const totals = new Map<number, { reps: number; weight: number; count: number }>();
+  for (const we of history) {
+    for (const set of we.sets) {
+      const acc = totals.get(set.setNumber) ?? { reps: 0, weight: 0, count: 0 };
+      acc.reps += set.reps;
+      acc.weight += set.weight;
+      acc.count += 1;
+      totals.set(set.setNumber, acc);
+    }
+  }
+  const averages = new Map<number, { reps: number; weight: number }>();
+  totals.forEach((acc, setNumber) => {
+    averages.set(setNumber, {
+      reps: Math.round(acc.reps / acc.count),
+      weight: Math.round(acc.weight / acc.count),
+    });
+  });
+  return averages;
+}
+
 export const workoutRouter = createTRPCRouter({
   // Iniciar sesión de entrenamiento (opcionalmente desde una rutina)
   start: protectedProcedure
@@ -24,26 +58,32 @@ export const workoutRouter = createTRPCRouter({
         if (routine.userId !== ctx.session.user.id && !routine.isShared) {
           throw new TRPCError({ code: "FORBIDDEN" });
         }
-        // Precargar pesos y reps de la ÚLTIMA sesión de cada ejercicio
-        // (si no hay, se usa el objetivo de la rutina). touched=false hasta que se editen.
+        // Precargar pesos y reps con la MEDIA de las últimas cinco sesiones de
+        // cada ejercicio (si no hay historial, se usa el objetivo de la
+        // rutina). touched=false hasta que se editen.
         exercisesData = await Promise.all(
           routine.exercises.map(async (re) => {
-            const lastTime = await ctx.db.workoutExercise.findFirst({
+            const history = await ctx.db.workoutExercise.findMany({
               where: {
                 exerciseId: re.exerciseId,
                 workout: { userId: ctx.session.user.id, endedAt: { not: null } },
               },
               orderBy: { workout: { startedAt: "desc" } },
-              include: { sets: { orderBy: { setNumber: "asc" } } },
+              take: SUGGESTION_SAMPLE,
+              select: { sets: { select: { setNumber: true, reps: true, weight: true } } },
             });
+            const averages = averageSets(history);
             return {
               exerciseId: re.exerciseId,
               order: re.order,
-              sets: Array.from({ length: re.sets }, (_, i) => ({
-                setNumber: i + 1,
-                reps: lastTime?.sets[i]?.reps ?? re.reps,
-                weight: lastTime?.sets[i]?.weight ?? re.targetWeight ?? 0,
-              })),
+              sets: Array.from({ length: re.sets }, (_, i) => {
+                const avg = averages.get(i + 1);
+                return {
+                  setNumber: i + 1,
+                  reps: avg?.reps ?? re.reps,
+                  weight: avg?.weight ?? re.targetWeight ?? 0,
+                };
+              }),
             };
           }),
         );

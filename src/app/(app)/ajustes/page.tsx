@@ -5,10 +5,10 @@ import { format } from "date-fns";
 import { signOut } from "next-auth/react";
 import {
   LogOut, Camera, Wallet, Eye, GraduationCap, User, Bell, ShieldAlert,
-  KeyRound, ChevronDown,
+  KeyRound, ChevronDown, Trash2,
 } from "lucide-react";
 import { api } from "@/trpc/react";
-import { Button, Card, Input, Label, Spinner, Avatar } from "@/components/ui";
+import { Button, Card, Input, Label, Spinner, Avatar, Modal } from "@/components/ui";
 import { AdminView } from "@/components/views/admin-view";
 import { PushSettings } from "@/components/push-settings";
 import { useViewAsUser } from "@/lib/use-view-as-user";
@@ -79,6 +79,9 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [viewAsUser, setViewAsUser] = useViewAsUser();
+  // Borrado de cuenta: la palabra la decide el servidor y hay que teclearla
+  const [deletion, setDeletion] = useState<{ word: string; graceDays: number } | null>(null);
+  const [deletionTyped, setDeletionTyped] = useState("");
   const [, setTutorial] = useTutorialLaunch();
 
   useEffect(() => {
@@ -101,6 +104,18 @@ export default function SettingsPage() {
   const resetData = api.user.resetData.useMutation({
     onSuccess: () => { utils.invalidate(); setMessage("Perfil reseteado ✅"); },
     onError: (e) => setMessage(e.message),
+  });
+  const deletionChallenge = api.user.deletionChallenge.useMutation({
+    onSuccess: (d) => { setDeletion(d); setDeletionTyped(""); },
+    onError: (e) => setMessage(e.message),
+  });
+  // Al confirmar se cierra la sesión: el perfil ya no se ve en los grupos
+  const requestDeletion = api.user.requestDeletion.useMutation({
+    onSuccess: () => signOut({ callbackUrl: "/login" }),
+    onError: (e) => setMessage(e.message),
+  });
+  const cancelDeletion = api.user.cancelDeletion.useMutation({
+    onSuccess: () => { utils.user.me.invalidate(); setMessage("Borrado cancelado ✅"); },
   });
 
   if (isLoading || !me) return <Spinner />;
@@ -246,7 +261,69 @@ export default function SettingsPage() {
             }}>
             Resetear mi perfil
           </Button>
+
+          <div className="space-y-2 border-t border-border pt-3">
+            {me.deletionRequestedAt ? (
+              <>
+                <p className="text-sm text-red-400">
+                  Tu cuenta está pendiente de borrado desde el{" "}
+                  {format(me.deletionRequestedAt, "dd/MM/yyyy")}. Se eliminará definitivamente 15 días
+                  después. Puedes cancelarlo ahora o simplemente volviendo a iniciar sesión.
+                </p>
+                <Button variant="secondary" loading={cancelDeletion.isLoading}
+                  onClick={() => cancelDeletion.mutate()}>
+                  Cancelar el borrado
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted">
+                  Borrar la cuenta cierra la sesión y te saca de todos tus grupos al instante, pero tu
+                  información se conserva <strong>15 días</strong>. Si vuelves a entrar dentro de ese
+                  plazo, el borrado se cancela y tu perfil reaparece tal cual estaba. Pasados los 15
+                  días se elimina todo sin vuelta atrás.
+                </p>
+                <Button variant="danger" loading={deletionChallenge.isLoading}
+                  onClick={() => deletionChallenge.mutate()}>
+                  <Trash2 className="h-4 w-4" /> Borrar mi cuenta
+                </Button>
+              </>
+            )}
+          </div>
         </Section>
+
+        {/* Confirmación del borrado: hay que teclear una palabra aleatoria,
+            justo para que no se haga en piloto automático */}
+        <Modal
+          open={deletion !== null}
+          onClose={() => setDeletion(null)}
+          title="Borrar mi cuenta"
+          subtitle="Esto cierra la sesión y te saca de tus grupos"
+          footer={
+            <Button
+              variant="danger"
+              className="w-full"
+              disabled={deletionTyped.trim().toLowerCase() !== deletion?.word}
+              loading={requestDeletion.isLoading}
+              onClick={() => requestDeletion.mutate({ word: deletionTyped.trim() })}
+            >
+              Borrar definitivamente
+            </Button>
+          }
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-muted">
+              Tienes <strong>{deletion?.graceDays ?? 15} días</strong> para arrepentirte: durante ese
+              plazo basta con volver a iniciar sesión para recuperarlo todo. Después, tu información se
+              eliminará de forma definitiva.
+            </p>
+            <div>
+              <Label>Escribe <span className="font-mono text-red-400">{deletion?.word}</span> para confirmar</Label>
+              <Input value={deletionTyped} autoCapitalize="none" autoCorrect="off"
+                onChange={(e) => setDeletionTyped(e.target.value)} />
+            </div>
+          </div>
+        </Modal>
 
         {message && <p className="px-1 text-sm text-accent">{message}</p>}
       </div>

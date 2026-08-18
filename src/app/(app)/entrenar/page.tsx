@@ -109,19 +109,19 @@ export default function ActiveWorkoutPage() {
           </p>
         </div>
         <div className="flex shrink-0 gap-1.5">
+          {/* El candado solo cierra la creación de series nuevas: los pesos,
+              las reps y el resto de la sesión se siguen tocando igual. */}
           <Button
             variant={locked ? "primary" : "secondary"}
             size="sm"
-            title={locked ? "Desbloquear edición" : "Bloquear edición (evita cambios accidentales)"}
+            title={locked ? "Permitir añadir series" : "Bloquear la creación de series nuevas"}
             onClick={() => setLocked((v) => !v)}
           >
             {locked ? <Lock className="h-4 w-4" /> : <LockOpen className="h-4 w-4" />}
           </Button>
-          {!locked && (
-            <Button variant="secondary" size="sm" title="Añadir ejercicio" onClick={() => setAddOpen(true)}>
-              <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Ejercicio</span>
-            </Button>
-          )}
+          <Button variant="secondary" size="sm" title="Añadir ejercicio" onClick={() => setAddOpen(true)}>
+            <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Ejercicio</span>
+          </Button>
         </div>
       </div>
 
@@ -142,12 +142,13 @@ export default function ActiveWorkoutPage() {
 
       {locked ? (
         <p className="flex items-center gap-1.5 text-xs text-accent">
-          <Lock className="h-3.5 w-3.5" /> Edición bloqueada: solo puedes marcar series completadas.
+          <Lock className="h-3.5 w-3.5" /> Series bloqueadas: no se pueden añadir nuevas. Todo lo demás
+          se edita con normalidad.
         </p>
       ) : (
         <p className="text-xs text-muted">
-          Los valores <span className="italic">en gris</span> vienen de tu última sesión; al editarlos o
-          completar la serie pasan a esta.
+          Los valores <span className="italic">en gris</span> son la media de tus últimas 5 sesiones; al
+          editarlos o completar la serie pasan a esta.
         </p>
       )}
 
@@ -173,16 +174,14 @@ export default function ActiveWorkoutPage() {
                 <Input
                   type="number" min={0} step="0.5" defaultValue={s.weight || ""}
                   placeholder="0"
-                  disabled={locked}
-                  className={cn(!s.touched && "italic text-muted", locked && "opacity-60")}
+                  className={cn(!s.touched && "italic text-muted")}
                   onBlur={(e) => updateSet.mutate({ setId: s.id, weight: +e.target.value || 0 })}
                 />
               )}
               <Input
                 type="number" min={0} defaultValue={s.reps || ""}
                 placeholder="0"
-                disabled={locked}
-                className={cn(!s.touched && "italic text-muted", locked && "opacity-60")}
+                className={cn(!s.touched && "italic text-muted")}
                 onBlur={(e) => updateSet.mutate({ setId: s.id, reps: +e.target.value || 0 })}
               />
               <button

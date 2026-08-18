@@ -9,8 +9,12 @@ import { cn } from "@/lib/utils";
 /**
  * Botón flotante visible en toda la app: cualquier usuario puede enviar
  * sugerencias de mejora o reportar bugs. Los admins las ven en /admin.
+ *
+ * Se retira solo tras 3 segundos sin scroll, esté la página donde esté: el
+ * temporizador arranca al montar y se reinicia con cualquier gesto, así que
+ * también desaparece en pantallas cortas que no llegan a desplazarse.
  */
-const HIDE_AFTER_MS = 4000;
+const HIDE_AFTER_MS = 3000;
 
 export function FeedbackButton() {
   const [open, setOpen] = useState(false);
@@ -19,21 +23,24 @@ export function FeedbackButton() {
   const [visible, setVisible] = useState(true);
   const hideTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  // Visible al hacer scroll; se esconde tras unos segundos de inactividad
+  // Visible al hacer scroll; se esconde tras 3 segundos de inactividad.
+  // Se escuchan también rueda y arrastre: en una página que no desborda no hay
+  // evento "scroll", y antes el botón se quedaba clavado en pantalla.
   useEffect(() => {
     const scheduleHide = () => {
       clearTimeout(hideTimer.current);
       hideTimer.current = setTimeout(() => setVisible(false), HIDE_AFTER_MS);
     };
-    const onScroll = () => {
+    const wake = () => {
       setVisible(true);
       scheduleHide();
     };
     scheduleHide();
-    window.addEventListener("scroll", onScroll, { passive: true });
+    const events = ["scroll", "wheel", "touchmove"] as const;
+    events.forEach((e) => window.addEventListener(e, wake, { passive: true }));
     return () => {
       clearTimeout(hideTimer.current);
-      window.removeEventListener("scroll", onScroll);
+      events.forEach((e) => window.removeEventListener(e, wake));
     };
   }, []);
 
@@ -55,8 +62,14 @@ export function FeedbackButton() {
         title="Enviar feedback"
         aria-label="Enviar feedback"
         className={cn(
-          "fixed bottom-20 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-border bg-surface-2 text-muted shadow-lg transition-all duration-300 hover:text-accent md:bottom-6 md:right-6",
-          !visible && !open && "pointer-events-none translate-y-3 opacity-0",
+          // Relleno de acento y anillo propio: sobre cualquier fondo de la app
+          // se distingue al instante, que antes se perdía contra las tarjetas.
+          "fixed bottom-20 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full",
+          "bg-gradient-to-br from-accent to-accent/70 text-accent-fg",
+          "shadow-lg shadow-accent/25 ring-1 ring-accent/40 ring-offset-2 ring-offset-bg",
+          "transition-all duration-300 hover:scale-105 hover:shadow-accent/40 active:scale-95",
+          "md:bottom-6 md:right-6",
+          !visible && !open && "pointer-events-none translate-y-3 scale-90 opacity-0",
         )}
       >
         <MessageSquarePlus className="h-5 w-5" />

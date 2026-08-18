@@ -6,6 +6,13 @@ import { createTRPCRouter, publicProcedure, protectedProcedure } from "@/server/
 import { effectiveWeekStreak, streaksForUsers } from "@/server/services/streak";
 import { trainingProfiles, affinityBetween, affinityDetail } from "@/server/services/affinity";
 import { sendPushToUsers } from "@/server/services/push";
+import { createGroupFor, joinGroupAs } from "@/server/api/routers/group";
+import { groupMemberIds } from "@/server/services/group";
+import {
+  DELETION_GRACE_DAYS,
+  deletionDeadline,
+  randomDeletionWord,
+} from "@/server/services/account-deletion";
 import {
   RESET_TTL_MINUTES,
   consumeResetToken,
@@ -15,20 +22,33 @@ import {
 } from "@/server/services/password-reset";
 
 export const userRouter = createTRPCRouter({
+  /**
+   * Alta de cuenta. Hay dos caminos y la pantalla de acceso los ofrece como
+   * tales: CREAR UN GRUPO (hace falta la clave maestra) o UNIRME A UN GRUPO
+   * (basta con su código).
+   */
   register: publicProcedure
     .input(
       z.object({
         name: z.string().min(2).max(50),
         email: z.string().email(),
         password: z.string().min(8),
-        inviteCode: z.string(),
         gymStartDate: z.date().optional(),
+        group: z.discriminatedUnion("mode", [
+          z.object({
+            mode: z.literal("join"),
+            code: z.string().trim().min(1),
+          }),
+          z.object({
+            mode: z.literal("create"),
+            name: z.string().trim().min(2).max(40),
+            code: z.string().trim().min(4).max(20),
+            masterKey: z.string(),
+          }),
+        ]),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      if (input.inviteCode !== process.env.INVITE_CODE) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Código de invitación incorrecto" });
-      }
       const email = input.email.toLowerCase().trim();
       const existing = await ctx.db.user.findUnique({ where: { email } });
       if (existing) {
@@ -44,7 +64,19 @@ export const userRouter = createTRPCRouter({
           role: isFirst ? "ADMIN" : "USER", // el primer usuario es admin
         },
       });
-      return { id: user.id };
+
+      // Si el grupo falla no queda una cuenta a medias: se deshace el alta.
+      try {
+        const group =
+          input.group.mode === "create"
+            ? await createGroupFor(ctx.db, user.id, input.group)
+            : await joinGroupAs(ctx.db, user.id, input.group.code);
+        await ctx.db.user.update({ where: { id: user.id }, data: { activeGroupId: group.id } });
+        return { id: user.id, group: { name: group.name, code: group.code } };
+      } catch (error) {
+        await ctx.db.user.delete({ where: { id: user.id } });
+        throw error;
+      }
     }),
 
   me: protectedProcedure.query(({ ctx }) =>
@@ -54,6 +86,7 @@ export const userRouter = createTRPCRouter({
         id: true, email: true, name: true, avatarUrl: true, gymStartDate: true,
         role: true, currentStreak: true, bestStreak: true, createdAt: true, notifyPrefs: true,
         weeklyTargetDays: true, investmentEnabled: true, onboardingDone: true,
+        deletionRequestedAt: true,
       },
     }),
   ),
@@ -186,6 +219,14 @@ export const userRouter = createTRPCRouter({
   publicProfile: protectedProcedure
     .input(z.object({ userId: z.string() }))
     .query(async ({ ctx, input }) => {
+      // Un perfil solo se ve desde dentro: hay que compartir grupo con él (o
+      // ser uno mismo). Los perfiles pendientes de borrado no se ven.
+      if (input.userId !== ctx.session.user.id) {
+        const memberIds = await groupMemberIds(ctx.db, ctx.groupId);
+        if (!memberIds.includes(input.userId)) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Ese perfil no está en tu grupo" });
+        }
+      }
       const user = await ctx.db.user.findUniqueOrThrow({
         where: { id: input.userId },
         select: {
@@ -285,7 +326,10 @@ export const userRouter = createTRPCRouter({
   // de entrenamiento) se resuelve en su perfil, no aquí.
   list: protectedProcedure.query(async ({ ctx }) => {
     const me = ctx.session.user.id;
+    // Solo el grupo activo, y sin los perfiles con borrado pendiente
+    const memberIds = await groupMemberIds(ctx.db, ctx.groupId);
     const users = await ctx.db.user.findMany({
+      where: { id: { in: memberIds } },
       select: {
         id: true, name: true, avatarUrl: true,
         currentStreak: true, lastCompletedWeek: true, weeklyTargetDays: true,
@@ -351,4 +395,50 @@ export const userRouter = createTRPCRouter({
       // llega aquí ya ha demostrado tener el token de esa cuenta.
       return { ok: true, email: result.email };
     }),
+
+  // ---------- Borrado de la cuenta (dos fases) ----------
+
+  /**
+   * Genera la palabra que habrá que teclear para confirmar. Es aleatoria a
+   * propósito: un "ESCRIBE BORRAR" se teclea en piloto automático.
+   */
+  deletionChallenge: protectedProcedure.mutation(async ({ ctx }) => {
+    const word = randomDeletionWord();
+    await ctx.db.user.update({
+      where: { id: ctx.session.user.id },
+      data: { deletionWord: word },
+    });
+    return { word, graceDays: DELETION_GRACE_DAYS };
+  }),
+
+  /**
+   * Fase 1: el perfil desaparece de los grupos y la sesión se cierra, pero no
+   * se borra nada durante DELETION_GRACE_DAYS. Volver a entrar lo cancela.
+   */
+  requestDeletion: protectedProcedure
+    .input(z.object({ word: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const user = await ctx.db.user.findUniqueOrThrow({
+        where: { id: ctx.session.user.id },
+        select: { deletionWord: true },
+      });
+      if (!user.deletionWord || input.word.trim().toLowerCase() !== user.deletionWord) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "La palabra no coincide" });
+      }
+      const requestedAt = new Date();
+      await ctx.db.user.update({
+        where: { id: ctx.session.user.id },
+        data: { deletionRequestedAt: requestedAt, deletionWord: null },
+      });
+      return { ok: true, deletesAt: deletionDeadline(requestedAt), graceDays: DELETION_GRACE_DAYS };
+    }),
+
+  /** Cancelar el borrado sin tener que cerrar y abrir sesión. */
+  cancelDeletion: protectedProcedure.mutation(async ({ ctx }) => {
+    await ctx.db.user.update({
+      where: { id: ctx.session.user.id },
+      data: { deletionRequestedAt: null, deletionWord: null },
+    });
+    return { ok: true };
+  }),
 });

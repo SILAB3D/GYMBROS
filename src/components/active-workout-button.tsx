@@ -11,8 +11,10 @@ import { cn } from "@/lib/utils";
  * Acceso rápido al entrenamiento en curso desde cualquier pantalla.
  *
  * Salir de /entrenar a mirar una rutina o el ranking era un viaje de ida sin
- * vuelta clara; este botón vive en la esquina inferior izquierda mientras haya
- * una sesión abierta y desaparece en cuanto se termina o si ya estás en ella.
+ * vuelta clara; este botón aparece mientras haya una sesión abierta y
+ * desaparece en cuanto se termina o si ya estás en ella.
+ *
+ * No se coloca solo: lo apila <FloatingDock> junto al temporizador de descanso.
  */
 
 /** Cada cuánto se refresca el cronómetro del botón. */
@@ -54,8 +56,8 @@ export function ActiveWorkoutButton() {
       href="/entrenar"
       aria-label="Volver al entrenamiento en curso"
       className={cn(
-        "fixed bottom-20 left-4 z-40 flex items-center gap-2.5 rounded-full border border-accent/50 bg-accent/15 py-2 pl-2.5 pr-3.5 shadow-lg backdrop-blur-xl transition",
-        "hover:border-accent hover:bg-accent/25 md:bottom-6 md:left-64",
+        "pointer-events-auto flex items-center gap-2.5 rounded-full border border-accent/50 bg-accent/15 py-2 pl-2.5 pr-3.5 shadow-lg backdrop-blur-xl transition",
+        "hover:border-accent hover:bg-accent/25",
       )}
     >
       <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/25">

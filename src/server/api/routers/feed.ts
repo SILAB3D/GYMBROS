@@ -1,11 +1,15 @@
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
+import { groupMemberIds } from "@/server/services/group";
 
 export const feedRouter = createTRPCRouter({
   list: protectedProcedure
     .input(z.object({ limit: z.number().int().min(1).max(100).default(30) }).optional())
-    .query(({ ctx, input }) =>
+    // Las publicaciones son del usuario (se generan con sus PRs, rachas…) y
+    // se ven en todos sus grupos: aquí se filtra por quién está en este.
+    .query(async ({ ctx, input }) =>
       ctx.db.feedItem.findMany({
+        where: { userId: { in: await groupMemberIds(ctx.db, ctx.groupId) } },
         include: {
           user: { select: { id: true, name: true, avatarUrl: true } },
           likes: { select: { userId: true } },

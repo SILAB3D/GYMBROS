@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { subYears } from "date-fns";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
+import { isGroupAdmin, requireGroup } from "@/server/services/group";
 
 export const chatRouter = createTRPCRouter({
   // Últimos 100 mensajes, en orden cronológico.
@@ -11,7 +12,9 @@ export const chatRouter = createTRPCRouter({
     await ctx.db.chatMessage.deleteMany({
       where: { createdAt: { lt: subYears(new Date(), 1) } },
     });
+    if (!ctx.groupId) return [];
     const messages = await ctx.db.chatMessage.findMany({
+      where: { groupId: ctx.groupId },
       include: {
         user: { select: { id: true, name: true } },
         reactions: { select: { userId: true, emoji: true } },
@@ -32,8 +35,10 @@ export const chatRouter = createTRPCRouter({
       where: { id: ctx.session.user.id },
       select: { lastChatReadAt: true },
     });
+    if (!ctx.groupId) return 0;
     return ctx.db.chatMessage.count({
       where: {
+        groupId: ctx.groupId,
         userId: { not: ctx.session.user.id },
         createdAt: { gt: me.lastChatReadAt ?? new Date(0) },
       },
@@ -58,14 +63,19 @@ export const chatRouter = createTRPCRouter({
   send: protectedProcedure
     .input(z.object({ text: z.string().trim().min(1).max(1000) }))
     .mutation(({ ctx, input }) =>
-      ctx.db.chatMessage.create({ data: { userId: ctx.session.user.id, text: input.text } }),
+      ctx.db.chatMessage.create({
+        data: { userId: ctx.session.user.id, text: input.text, groupId: requireGroup(ctx.groupId) },
+      }),
     ),
 
-  // Cada uno puede borrar sus mensajes; el admin, cualquiera
+  // Cada uno puede borrar sus mensajes; el admin del grupo, cualquiera
   delete: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
     const message = await ctx.db.chatMessage.findUnique({ where: { id: input.id } });
-    if (!message) throw new TRPCError({ code: "NOT_FOUND" });
-    if (message.userId !== ctx.session.user.id && ctx.session.user.role !== "ADMIN") {
+    if (!message || message.groupId !== ctx.groupId) throw new TRPCError({ code: "NOT_FOUND" });
+    const isAdmin =
+      ctx.session.user.role === "ADMIN" ||
+      (await isGroupAdmin(ctx.db, ctx.groupId, ctx.session.user.id));
+    if (message.userId !== ctx.session.user.id && !isAdmin) {
       throw new TRPCError({ code: "FORBIDDEN" });
     }
     await ctx.db.chatMessage.delete({ where: { id: input.id } });
