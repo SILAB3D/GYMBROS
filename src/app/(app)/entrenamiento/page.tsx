@@ -2,24 +2,27 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Dumbbell, TrendingUp, CalendarCheck, Medal } from "lucide-react";
+import { Dumbbell, TrendingUp, Medal } from "lucide-react";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
 import { RoutinesPlanView } from "@/components/views/routines-plan-view";
 import { ProgressView } from "@/components/views/progress-view";
-import { AttendanceView } from "@/components/views/attendance-view";
 import { PRsView } from "@/components/views/prs-view";
 import { WorkoutLauncher } from "@/components/workout-launcher";
 
 const TABS = [
-  { key: "rutinas", label: "Rutinas y plan", icon: Dumbbell },
+  { key: "rutinas", label: "Mi plan", icon: Dumbbell },
   { key: "progreso", label: "Progreso", icon: TrendingUp },
-  { key: "asistencia", label: "Asistencia", icon: CalendarCheck },
-  { key: "prs", label: "PRs", icon: Medal },
+  { key: "prs", label: "Récords", icon: Medal },
 ] as const;
 
-// Alias de pestañas antiguas para que los enlaces guardados sigan funcionando
-const TAB_ALIASES: Record<string, string> = { plan: "rutinas", historial: "asistencia" };
+// Alias de pestañas antiguas para que los enlaces guardados sigan funcionando.
+// El historial vive ahora al final de «Mi plan de entrenamiento».
+const TAB_ALIASES: Record<string, string> = {
+  plan: "rutinas",
+  historial: "rutinas",
+  asistencia: "rutinas",
+};
 
 function TrainingContent() {
   const router = useRouter();
@@ -31,14 +34,11 @@ function TrainingContent() {
 
   // Precargar en segundo plano los datos de TODAS las pestañas
   useEffect(() => {
-    const now = new Date();
     void utils.routine.mine.prefetch();
+    void utils.routine.stats.prefetch();
     void utils.plan.get.prefetch();
     void utils.routine.shared.prefetch();
-    void utils.attendance.stats.prefetch();
-    void utils.attendance.month.prefetch({ year: now.getFullYear(), month: now.getMonth() });
-    void utils.pr.bests.prefetch();
-    void utils.pr.recent.prefetch({ limit: 15 });
+    void utils.pr.byRoutine.prefetch();
     void utils.exercise.list.prefetch();
     void utils.workout.history.prefetch({ limit: 30 });
     void utils.stats.routineTrends.prefetch();
@@ -64,14 +64,13 @@ function TrainingContent() {
             )}
           >
             <Icon className="h-4 w-4 shrink-0" />
-            <span className="hidden min-[560px]:inline">{label}</span>
+            <span className="hidden min-[460px]:inline">{label}</span>
           </button>
         ))}
       </div>
 
       {visited.has("rutinas") && <div className={tab === "rutinas" ? "" : "hidden"}><RoutinesPlanView /></div>}
       {visited.has("progreso") && <div className={tab === "progreso" ? "" : "hidden"}><ProgressView /></div>}
-      {visited.has("asistencia") && <div className={tab === "asistencia" ? "" : "hidden"}><AttendanceView /></div>}
       {visited.has("prs") && <div className={tab === "prs" ? "" : "hidden"}><PRsView /></div>}
     </div>
   );

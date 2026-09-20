@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { MuscleGroup } from "@prisma/client";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
+import { MAX_WORKOUT_MS } from "@/server/services/workout-service";
 import { awardPoints, addFeed, checkAchievements } from "@/server/services/gamification";
 import { syncWeeklyTarget } from "@/server/services/weekly-target";
 
@@ -25,6 +26,16 @@ const routineInput = z.object({
   exercises: z.array(routineExerciseInput).default([]),
 });
 
+/** Siguiente hueco al final del plan: las rutinas nuevas se añaden abajo. */
+async function nextOrder(db: typeof import("@/lib/db").db, userId: string): Promise<number> {
+  const last = await db.routine.findFirst({
+    where: { userId },
+    orderBy: { order: "desc" },
+    select: { order: true },
+  });
+  return (last?.order ?? -1) + 1;
+}
+
 async function assertOwner(db: typeof import("@/lib/db").db, routineId: string, userId: string) {
   const routine = await db.routine.findUnique({ where: { id: routineId } });
   if (!routine) throw new TRPCError({ code: "NOT_FOUND" });
@@ -37,7 +48,7 @@ export const routineRouter = createTRPCRouter({
     ctx.db.routine.findMany({
       where: { userId: ctx.session.user.id },
       include: { exercises: { include: { exercise: true }, orderBy: { order: "asc" } } },
-      orderBy: { updatedAt: "desc" },
+      orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     }),
   ),
 
@@ -67,6 +78,7 @@ export const routineRouter = createTRPCRouter({
     const routine = await ctx.db.routine.create({
       data: {
         userId: ctx.session.user.id,
+        order: await nextOrder(ctx.db, ctx.session.user.id),
         name: input.name,
         description: input.description,
         color: input.color,
@@ -115,6 +127,7 @@ export const routineRouter = createTRPCRouter({
     const copy = await ctx.db.routine.create({
       data: {
         userId: ctx.session.user.id,
+        order: await nextOrder(ctx.db, ctx.session.user.id),
         name: `${original.name} (copia)`,
         description: original.description,
         color: original.color,
@@ -143,6 +156,70 @@ export const routineRouter = createTRPCRouter({
     });
     await syncWeeklyTarget(ctx.db, ctx.session.user.id);
     return updated;
+  }),
+
+  /**
+   * Sube o baja la rutina en el plan de entrenamiento. Los órdenes se reescriben
+   * 0..n-1 en la misma transacción, así que son inmunes a huecos o empates.
+   */
+  move: protectedProcedure
+    .input(z.object({ id: z.string(), direction: z.enum(["up", "down"]) }))
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+      await assertOwner(ctx.db, input.id, userId);
+      const routines = await ctx.db.routine.findMany({
+        where: { userId },
+        orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+        select: { id: true },
+      });
+      const index = routines.findIndex((r) => r.id === input.id);
+      const target = input.direction === "up" ? index - 1 : index + 1;
+      if (index === -1 || target < 0 || target >= routines.length) return { ok: true };
+
+      const ids = routines.map((r) => r.id);
+      const [moved] = ids.splice(index, 1);
+      ids.splice(target, 0, moved!);
+      await ctx.db.$transaction(
+        ids.map((id, order) => ctx.db.routine.update({ where: { id }, data: { order } })),
+      );
+      return { ok: true };
+    }),
+
+  /**
+   * Lo que de verdad cuesta cada rutina, a partir de los entrenos ya hechos:
+   * duración, series completadas y kg levantados en promedio.
+   *
+   * Solo cuentan las sesiones terminadas A MANO: las que cerró el temporizador
+   * a las 3 horas no reflejan un entreno real y dispararían las medias.
+   */
+  stats: protectedProcedure.query(async ({ ctx }) => {
+    const workouts = await ctx.db.workout.findMany({
+      where: { userId: ctx.session.user.id, endedAt: { not: null }, routineId: { not: null } },
+      select: {
+        routineId: true, startedAt: true, endedAt: true,
+        totalVolume: true, totalSets: true,
+      },
+    });
+
+    const acc = new Map<string, { sessions: number; minutes: number; sets: number; volume: number }>();
+    for (const w of workouts) {
+      const duration = w.endedAt!.getTime() - w.startedAt.getTime();
+      if (duration >= MAX_WORKOUT_MS) continue; // cerrada sola a las 3 h
+      const a = acc.get(w.routineId!) ?? { sessions: 0, minutes: 0, sets: 0, volume: 0 };
+      a.sessions += 1;
+      a.minutes += duration / 60_000;
+      a.sets += w.totalSets;
+      a.volume += w.totalVolume;
+      acc.set(w.routineId!, a);
+    }
+
+    return Array.from(acc.entries()).map(([routineId, a]) => ({
+      routineId,
+      sessions: a.sessions,
+      avgMinutes: Math.round(a.minutes / a.sessions),
+      avgSets: Math.round(a.sets / a.sessions),
+      avgVolume: Math.round(a.volume / a.sessions),
+    }));
   }),
 
   toggleShare: protectedProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
@@ -206,6 +283,7 @@ export const routineRouter = createTRPCRouter({
       const imported = await ctx.db.routine.create({
         data: {
           userId,
+          order: await nextOrder(ctx.db, userId),
           name: input.name,
           description: input.description,
           color: input.color,
@@ -258,6 +336,7 @@ export const routineRouter = createTRPCRouter({
     const cloned = await ctx.db.routine.create({
       data: {
         userId: ctx.session.user.id,
+        order: await nextOrder(ctx.db, ctx.session.user.id),
         name: original.name,
         description: `Clonada de ${original.user.name}`,
         color: original.color,

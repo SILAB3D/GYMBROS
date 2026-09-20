@@ -1,23 +1,27 @@
 import { subMonths, startOfMonth, format } from "date-fns";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 
-/** Sesiones que se comparan a cada lado para calcular la tendencia. */
-const WINDOW = 3;
+/** Sesiones recientes que forman la media «de ahora». */
+export const RECENT_SESSIONS = 2;
+/** Sesiones anteriores contra las que se compara. */
+export const PREVIOUS_SESSIONS = 3;
+/** Sin estas sesiones no hay tendencia que calcular. */
+export const MIN_SESSIONS = RECENT_SESSIONS + PREVIOUS_SESSIONS;
 /** Umbral (en %) por debajo del cual se considera que el volumen se mantiene. */
 const FLAT_PCT = 5;
 
 export type TrendDirection = "up" | "flat" | "down" | "unknown";
 
 /**
- * Tendencia de un ejercicio: media de volumen de las últimas sesiones frente a
- * la de las anteriores. Con pocos datos la ventana se encoge, y con menos de
- * dos sesiones no hay nada que comparar.
+ * Tendencia de un ejercicio: media de volumen de las 2 últimas sesiones frente
+ * a la media de las 3 anteriores. Sin esas 5 sesiones no se calcula nada: una
+ * ventana más corta daría un porcentaje que cambia de signo con cualquier día
+ * flojo, y eso no es progreso, es ruido.
  */
 function computeTrend(volumes: number[]): { direction: TrendDirection; changePct: number | null } {
-  if (volumes.length < 2) return { direction: "unknown", changePct: null };
-  const k = Math.min(WINDOW, Math.floor(volumes.length / 2));
-  const recent = volumes.slice(-k);
-  const previous = volumes.slice(-2 * k, -k);
+  if (volumes.length < MIN_SESSIONS) return { direction: "unknown", changePct: null };
+  const recent = volumes.slice(-RECENT_SESSIONS);
+  const previous = volumes.slice(-MIN_SESSIONS, -RECENT_SESSIONS);
   const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
   const before = avg(previous);
   const after = avg(recent);

@@ -60,14 +60,17 @@ export function PointsBreakdown({
 
       {tab === "categoria" ? (
         <div className="space-y-2">
-          {sorted.map((b) => (
-            <div key={b.type} className="flex items-center justify-between text-sm">
-              <span className="text-muted">
-                {POINT_LABELS[b.type] ?? b.type} <span className="text-muted/70">× {b.count}</span>
-              </span>
-              <span className="font-medium text-accent">+{b.points}</span>
-            </div>
-          ))}
+          {/* Cuatro anotaciones a la vista; el resto, con scroll */}
+          <div className="max-h-[6.5rem] space-y-2 overflow-y-auto pr-1">
+            {sorted.map((b) => (
+              <div key={b.type} className="flex items-center justify-between text-sm">
+                <span className="text-muted">
+                  {POINT_LABELS[b.type] ?? b.type} <span className="text-muted/70">× {b.count}</span>
+                </span>
+                <span className="font-medium text-accent">+{b.points}</span>
+              </div>
+            ))}
+          </div>
           <div className="flex items-center justify-between border-t border-border pt-2 text-sm font-semibold">
             <span>Total</span>
             <span className="text-accent">{total} pts</span>
@@ -94,8 +97,8 @@ function PointsTimeline({ userId }: { userId?: string }) {
       <p className="text-xs text-muted">
         Últimos {data.sinceDays} días · {data.total} pts
       </p>
-      {/* Alto limitado: el historial puede ser largo y no debe empujar la página */}
-      <div className="max-h-80 space-y-3 overflow-y-auto pr-1">
+      {/* Alto limitado: se ven unas cuantas anotaciones y el resto llega con scroll */}
+      <div className="max-h-56 space-y-3 overflow-y-auto pr-1">
         {data.days.map((day) => (
           <div key={day.key} className="space-y-1">
             <div className="flex items-baseline justify-between gap-2 border-b border-border/60 pb-1">

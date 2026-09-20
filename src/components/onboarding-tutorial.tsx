@@ -17,12 +17,12 @@ const STEPS: Array<{ icon: React.ReactNode; title: string; text: string }> = [
   {
     icon: <span className="text-5xl">📋</span>,
     title: "Crea tu primera rutina",
-    text: "Ve a Entrenamiento → Rutinas y pulsa «Nueva rutina»: añade ejercicios con sus series y repeticiones, y elige cuántas veces por semana la harás. Tus pesos son siempre privados.",
+    text: "Ve a Entrenamiento → Mi plan y pulsa «Nueva rutina»: añade ejercicios con sus series y repeticiones, y elige cuántas veces por semana la harás. Tus pesos son siempre privados.",
   },
   {
     icon: <span className="text-5xl">🗓️</span>,
     title: "Arma tu plan",
-    text: "Tus rutinas aparecen solas en Entrenamiento → Rutinas y plan según sus veces por semana. Ordénalas con las flechas o pulsa «Ordenar automáticamente», e Inicio te dirá qué toca cada día.",
+    text: "En Entrenamiento → Mi plan ordenas tus rutinas con las flechas: cada una se repite tantas veces como sus veces por semana y así queda montada la semana, con sus días de descanso.",
   },
   {
     icon: <span className="text-5xl">🏋️</span>,

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
 import { signOut } from "next-auth/react";
 import {
-  LogOut, Camera, Wallet, Eye, GraduationCap, User, Bell, ShieldAlert,
+  LogOut, Camera, Eye, GraduationCap, User, Bell, ShieldAlert,
   KeyRound, ChevronDown, Trash2,
 } from "lucide-react";
 import { api } from "@/trpc/react";
@@ -194,14 +194,6 @@ export default function SettingsPage() {
                 </div>
               );
             })}
-          </div>
-        </Section>
-
-        {/* Inversión */}
-        <Section icon={<Wallet className="h-4 w-4" />} title="Apartado de inversión">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-sm text-muted">Muestra u oculta la sección de coste en el menú.</span>
-            <Toggle on={me.investmentEnabled} onClick={() => update.mutate({ investmentEnabled: !me.investmentEnabled })} />
           </div>
         </Section>
 

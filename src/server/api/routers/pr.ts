@@ -75,6 +75,79 @@ export const prRouter = createTRPCRouter({
     });
   }),
 
+  /**
+   * Mejores marcas agrupadas por rutina: para cada ejercicio de cada rutina, su
+   * récord (peso × reps y fecha). Los ejercicios sin ninguna marca no aparecen,
+   * y las marcas de ejercicios que ya no están en ninguna rutina se recogen en
+   * un último grupo para que no se pierdan de vista.
+   */
+  byRoutine: protectedProcedure.query(async ({ ctx }) => {
+    const userId = ctx.session.user.id;
+    const [routines, prs] = await Promise.all([
+      ctx.db.routine.findMany({
+        where: { userId },
+        orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+        select: {
+          id: true, name: true, emoji: true, color: true,
+          exercises: {
+            orderBy: { order: "asc" },
+            select: { exercise: { select: { id: true, name: true, noWeight: true } } },
+          },
+        },
+      }),
+      ctx.db.personalRecord.findMany({
+        where: { userId },
+        include: { exercise: { select: { id: true, name: true, noWeight: true } } },
+      }),
+    ]);
+
+    // Mejor marca por ejercicio: el peso manda, salvo en los ejercicios sin
+    // peso, donde el récord son las repeticiones de una serie.
+    type Record = { exerciseId: string; name: string; noWeight: boolean; weight: number; reps: number; date: Date };
+    const best = new Map<string, Record>();
+    for (const pr of prs) {
+      const current = best.get(pr.exerciseId);
+      const better = !current
+        ? true
+        : pr.exercise.noWeight
+          ? pr.reps > current.reps
+          : pr.weight > current.weight || (pr.weight === current.weight && pr.reps > current.reps);
+      if (better) {
+        best.set(pr.exerciseId, {
+          exerciseId: pr.exerciseId,
+          name: pr.exercise.name,
+          noWeight: pr.exercise.noWeight,
+          weight: pr.weight,
+          reps: pr.reps,
+          date: pr.date,
+        });
+      }
+    }
+
+    const grouped = new Set<string>();
+    const groups = routines
+      .map((r) => {
+        const records = r.exercises
+          .map((re) => best.get(re.exercise.id))
+          .filter((x): x is Record => x !== undefined);
+        records.forEach((x) => grouped.add(x.exerciseId));
+        return { id: r.id, name: r.name, emoji: r.emoji, color: r.color, records };
+      })
+      .filter((g) => g.records.length > 0);
+
+    const orphans = Array.from(best.values()).filter((x) => !grouped.has(x.exerciseId));
+    if (orphans.length > 0) {
+      groups.push({
+        id: "otros",
+        name: "Otros ejercicios",
+        emoji: "🏋️",
+        color: "#64748b",
+        records: orphans.sort((a, b) => a.name.localeCompare(b.name, "es")),
+      });
+    }
+    return groups;
+  }),
+
   // Evolución de un ejercicio para la gráfica
   history: protectedProcedure
     .input(z.object({ exerciseId: z.string() }))

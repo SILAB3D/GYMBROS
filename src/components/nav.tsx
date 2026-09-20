@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Dumbbell, Users, Wallet, Bell, Settings, AlertTriangle, MessageCircle } from "lucide-react";
+import { LayoutDashboard, Dumbbell, Users, Building2, Bell, Settings, AlertTriangle, MessageCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/trpc/react";
 import { Logo } from "@/components/logo";
@@ -11,22 +11,18 @@ const NAV = [
   { href: "/panel", label: "Inicio", icon: LayoutDashboard, match: /^\/panel/ },
   { href: "/entrenamiento", label: "Entrenamiento", icon: Dumbbell, match: /^\/(entrenamiento|rutinas|entrenar|asistencia|prs)/ },
   { href: "/comunidad", label: "Comunidad", icon: Users, match: /^\/(comunidad|ranking|perfil)/ },
-  { href: "/inversion", label: "Inversión", icon: Wallet, match: /^\/inversion/ },
+  { href: "/inversion", label: "Gym", icon: Building2, match: /^\/inversion/ },
   { href: "/ajustes", label: "Ajustes", icon: Settings, match: /^\/(ajustes|admin)/ },
 ];
 
-/** Estado compartido de la navegación: apartado de inversión y su alerta. */
+/** Estado compartido de la navegación: apartados y alerta del gimnasio. */
 function useNavState() {
-  const { data: me } = api.user.me.useQuery();
   const { data: subStatus } = api.subscription.status.useQuery(undefined, {
     refetchInterval: 5 * 60_000,
   });
-  const items = NAV.filter(
-    (item) => item.href !== "/inversion" || me?.investmentEnabled !== false,
-  );
   // Alerta: la suscripción terminó y no está en modo automático
-  const investmentAlert = subStatus?.expired === true && me?.investmentEnabled !== false;
-  return { items, investmentAlert };
+  const investmentAlert = subStatus?.expired === true;
+  return { items: NAV, investmentAlert };
 }
 
 export function Sidebar() {
@@ -125,7 +121,9 @@ export function MobileHeader() {
     refetchInterval: 30_000,
   });
   return (
-    <header className="fixed inset-x-0 top-0 z-40 flex items-center justify-between border-b border-border/60 bg-bg/80 px-4 py-3 backdrop-blur-xl md:hidden">
+    // El relleno superior suma el área segura del sistema: sin ella, en los
+    // móviles con notch la cabecera se solapaba con la hora y la batería.
+    <header className="fixed inset-x-0 top-0 z-40 flex items-center justify-between border-b border-border/60 bg-bg/80 px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] backdrop-blur-xl md:hidden">
       <Link href="/panel" className="flex items-center gap-2 text-lg font-extrabold">
         <Logo size={24} />
         <span>Gym<span className="text-accent">Bros</span></span>

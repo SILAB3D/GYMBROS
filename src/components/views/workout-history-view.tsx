@@ -1,0 +1,167 @@
+"use client";
+
+import { useState } from "react";
+import { format, differenceInMinutes, isSameDay } from "date-fns";
+import { es } from "date-fns/locale";
+import { ChevronDown, Check, Trash2 } from "lucide-react";
+import { api } from "@/trpc/react";
+import { Button, Card, Badge, Modal, EmptyState, Spinner } from "@/components/ui";
+import { formatKg } from "@/lib/utils";
+
+/**
+ * Historial de entrenamientos: cada sesión terminada, desplegable, con sus
+ * series. Desde aquí también se borra un día completo (entreno, puntos, PRs
+ * automáticos y publicaciones que generó), que es la única vía que queda tras
+ * retirar el apartado de asistencia.
+ */
+export function WorkoutHistoryView() {
+  const utils = api.useUtils();
+  const [dayDetail, setDayDetail] = useState<Date | null>(null);
+  const { data: workouts, isLoading } = api.workout.history.useQuery({ limit: 30 });
+  const { data: day, isFetching: dayLoading } = api.attendance.day.useQuery(
+    { date: dayDetail ?? new Date() },
+    { enabled: dayDetail !== null },
+  );
+
+  const deleteDay = api.attendance.deleteDay.useMutation({
+    onSuccess: () => {
+      utils.attendance.invalidate();
+      utils.workout.history.invalidate();
+      utils.dashboard.summary.invalidate();
+      utils.routine.stats.invalidate();
+      utils.stats.invalidate();
+      utils.pr.invalidate();
+      setDayDetail(null);
+    },
+  });
+
+  return (
+    <section className="space-y-3">
+      <h2 className="text-xl font-bold">Historial de entrenamientos</h2>
+
+      {isLoading ? (
+        <Spinner />
+      ) : workouts?.length === 0 ? (
+        <EmptyState
+          icon="📖"
+          title="Aún no hay entrenamientos"
+          subtitle="Cuando termines tu primera sesión aparecerá aquí"
+        />
+      ) : (
+        workouts?.map((w) => (
+          <details key={w.id} className="group rounded-2xl border border-border bg-surface">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-4 [&::-webkit-details-marker]:hidden">
+              <div className="min-w-0">
+                <p className="truncate font-medium">
+                  {w.routine ? `${w.routine.emoji} ${w.routine.name}` : "Entrenamiento libre"}
+                </p>
+                <p className="text-xs capitalize text-muted">
+                  {format(w.startedAt, "EEEE d MMM yyyy", { locale: es })}
+                  {w.endedAt ? ` · ${differenceInMinutes(w.endedAt, w.startedAt)} min` : ""}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Badge>{formatKg(w.totalVolume)}</Badge>
+                <Badge>{w.totalSets} series</Badge>
+                <ChevronDown className="h-4 w-4 text-muted transition-transform group-open:rotate-180" />
+              </div>
+            </summary>
+            <div className="space-y-3 border-t border-border p-4 pt-3">
+              {w.exercises.map((we) => (
+                <div key={we.id}>
+                  <p className="mb-1 text-sm font-medium">{we.exercise.name}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {we.sets.map((s) => (
+                      <span
+                        key={s.id}
+                        className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs ${
+                          s.completed ? "bg-accent/15 text-accent" : "bg-surface-2 text-muted line-through"
+                        }`}
+                      >
+                        {!we.exercise.noWeight && s.weight > 0 ? `${s.weight} kg × ` : ""}
+                        {s.reps}
+                        {s.completed && <Check className="h-3 w-3" />}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {w.notes && <p className="text-xs text-muted">📝 {w.notes}</p>}
+              <Button
+                size="sm" variant="ghost" className="text-red-400"
+                onClick={() => setDayDetail(w.startedAt)}
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Borrar este día
+              </Button>
+            </div>
+          </details>
+        ))
+      )}
+
+      <Modal
+        open={dayDetail !== null}
+        onClose={() => setDayDetail(null)}
+        title={dayDetail ? format(dayDetail, "EEEE d 'de' MMMM yyyy", { locale: es }) : undefined}
+        subtitle={isSameDay(dayDetail ?? new Date(), new Date()) ? "Es el día de hoy" : undefined}
+        footer={
+          <Button
+            variant="danger"
+            className="w-full"
+            loading={deleteDay.isLoading}
+            disabled={!day?.attendance && (day?.workouts.length ?? 0) === 0}
+            onClick={() => {
+              if (!dayDetail) return;
+              if (confirm("¿Borrar este día y todo lo que generó? No se puede deshacer.")) {
+                deleteDay.mutate({ date: dayDetail });
+              }
+            }}
+          >
+            <Trash2 className="h-4 w-4" /> Borrar el día y sus puntos
+          </Button>
+        }
+      >
+        {dayLoading && !day ? (
+          <Spinner />
+        ) : (
+          <div className="space-y-4">
+            {day?.attendance ? (
+              <p className="text-sm text-muted">Día registrado como entrenado.</p>
+            ) : (
+              <p className="text-sm text-muted">Este día no tiene asistencia registrada.</p>
+            )}
+
+            {(day?.workouts.length ?? 0) === 0 ? (
+              <p className="text-sm text-muted">Sin entrenamientos guardados en este día.</p>
+            ) : (
+              day?.workouts.map((w) => (
+                <Card key={w.id} className="space-y-2 py-3">
+                  <p className="text-sm font-medium">
+                    {w.routine ? `${w.routine.emoji} ${w.routine.name}` : "Entrenamiento libre"}
+                  </p>
+                  <p className="text-xs text-muted">
+                    {formatKg(w.totalVolume)} · {w.totalSets} series · {w.totalReps} reps
+                  </p>
+                  {w.exercises.map((we) => (
+                    <p key={we.id} className="text-xs text-muted">
+                      {we.exercise.name}:{" "}
+                      {we.sets
+                        .filter((s) => s.completed)
+                        .map((s) => (we.exercise.noWeight ? `${s.reps}` : `${s.weight}×${s.reps}`))
+                        .join(" · ") || "sin series completadas"}
+                    </p>
+                  ))}
+                </Card>
+              ))
+            )}
+
+            <p className="rounded-xl border border-red-500/30 bg-red-500/5 p-3 text-xs text-muted">
+              Al borrar el día se eliminan la asistencia, sus entrenamientos y todo lo que
+              generaron: puntos de asistencia, de entreno y de PR, los récords detectados
+              automáticamente y las publicaciones del grupo. La racha se recalcula.
+            </p>
+          </div>
+        )}
+      </Modal>
+    </section>
+  );
+}

@@ -2,9 +2,12 @@
 
 import Link from "next/link";
 import { useRef, useState } from "react";
-import { Plus, Copy, Share2, Trash2, Download, FileDown, FileUp, Power } from "lucide-react";
+import {
+  Plus, Copy, Share2, Trash2, Download, FileDown, FileUp, Power, ArrowUp, ArrowDown,
+} from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Spinner, EmptyState, Badge, Avatar } from "@/components/ui";
+import { formatKg } from "@/lib/utils";
 
 type ExportedRoutine = {
   gymbros: number;
@@ -26,12 +29,21 @@ type ExportedRoutine = {
   }>;
 };
 
+/**
+ * Mi plan de entrenamiento: las rutinas en el orden en que se van encadenando.
+ * El orden se fija aquí mismo con las flechas —no hay pantalla de plan aparte—
+ * y cada rutina aparece en el plan tantas veces como sus «veces por semana».
+ *
+ * La duración, las series y los kg que muestra cada tarjeta son la MEDIA de las
+ * sesiones terminadas a mano; mientras no haya ninguna, se enseña lo planificado.
+ */
 export function RoutinesView() {
   const utils = api.useUtils();
   const importInputRef = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const { data: mine, isLoading } = api.routine.mine.useQuery();
   const { data: shared } = api.routine.shared.useQuery();
+  const { data: stats } = api.routine.stats.useQuery();
 
   const invalidate = () => {
     utils.routine.invalidate();
@@ -79,6 +91,26 @@ export function RoutinesView() {
     onMutate: ({ id }) => {
       const current = utils.routine.mine.getData()?.find((r) => r.id === id);
       return optimisticPatch(id, { inPlan: !current?.inPlan });
+    },
+    onError: (_err, _vars, context) => rollbackMine(context),
+    onSettled: invalidate,
+  });
+  // Reordenación optimista: la lista se mueve al instante y el servidor confirma detrás
+  const move = api.routine.move.useMutation({
+    onMutate: async ({ id, direction }) => {
+      await utils.routine.mine.cancel();
+      const previous = utils.routine.mine.getData();
+      if (previous) {
+        const next = [...previous];
+        const index = next.findIndex((r) => r.id === id);
+        const target = direction === "up" ? index - 1 : index + 1;
+        if (index !== -1 && target >= 0 && target < next.length) {
+          const [moved] = next.splice(index, 1);
+          next.splice(target, 0, moved!);
+          utils.routine.mine.setData(undefined, next);
+        }
+      }
+      return { previous };
     },
     onError: (_err, _vars, context) => rollbackMine(context),
     onSettled: invalidate,
@@ -149,11 +181,24 @@ export function RoutinesView() {
 
   if (isLoading) return <Spinner />;
 
+  const routines = mine ?? [];
+  const statsOf = (routineId: string) => stats?.find((s) => s.routineId === routineId);
+  // Días de la semana que ocupa el plan y los que quedan de descanso
+  const trainingDays = Math.min(7, routines.reduce((acc, r) => acc + (r.inPlan ? r.timesPerWeek : 0), 0));
+  const restDays = 7 - trainingDays;
+
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Mis rutinas</h1>
-        <div className="flex gap-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <h1 className="text-2xl font-bold">Mi plan de entrenamiento</h1>
+          <p className="text-sm text-muted">
+            {trainingDays === 0
+              ? "Sin días de entreno: pon «veces por semana» en tus rutinas."
+              : `${trainingDays} ${trainingDays === 1 ? "día" : "días"} de entreno · ${restDays} de descanso 😴`}
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-2">
           <input
             ref={importInputRef}
             type="file"
@@ -182,7 +227,7 @@ export function RoutinesView() {
 
       {importError && <p className="text-sm text-red-400">Error al importar: {importError}</p>}
 
-      {mine?.length === 0 ? (
+      {routines.length === 0 ? (
         <EmptyState
           icon="📋"
           title="Todavía no tienes rutinas"
@@ -194,63 +239,108 @@ export function RoutinesView() {
           }
         />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {mine?.map((r) => (
-            <Card key={r.id} className="flex flex-col gap-3" style={{ borderColor: `${r.color}44` }}>
-              <Link href={`/rutinas/${r.id}`} className="flex items-start justify-between">
-                <div>
-                  <p className="text-lg font-semibold">
-                    {r.emoji} {r.name}
-                  </p>
-                  {r.description && <p className="text-sm text-muted">{r.description}</p>}
+        <div className="space-y-2">
+          {routines.map((r, i) => {
+            const s = statsOf(r.id);
+            const real = (s?.sessions ?? 0) > 0;
+            const minutes = real ? s!.avgMinutes : r.estimatedMinutes;
+            const sets = real ? s!.avgSets : r.exercises.reduce((acc, e) => acc + e.sets, 0);
+            return (
+              <Card
+                key={r.id}
+                className="flex items-center gap-2 p-2.5"
+                style={{ borderColor: `${r.color}44` }}
+              >
+                {/* Orden dentro del plan */}
+                <div className="flex shrink-0 flex-col">
+                  <button
+                    title="Subir en el plan"
+                    disabled={i === 0}
+                    onClick={() => move.mutate({ id: r.id, direction: "up" })}
+                    className="rounded-md px-1 text-muted transition hover:text-fg disabled:opacity-25"
+                  >
+                    <ArrowUp className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    title="Bajar en el plan"
+                    disabled={i === routines.length - 1}
+                    onClick={() => move.mutate({ id: r.id, direction: "down" })}
+                    className="rounded-md px-1 text-muted transition hover:text-fg disabled:opacity-25"
+                  >
+                    <ArrowDown className="h-3.5 w-3.5" />
+                  </button>
                 </div>
-                {r.isShared && <Badge className="bg-accent/15 text-accent">Compartida</Badge>}
-              </Link>
-              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
-                <button
-                  title={r.inPlan ? "Deshabilitar: sacarla del plan de entrenamiento" : "Habilitar: incluirla en el plan de entrenamiento"}
-                  onClick={() => toggleInPlan.mutate({ id: r.id })}
-                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
-                    r.inPlan
-                      ? "border-accent/40 bg-accent/15 text-accent hover:bg-accent/25"
-                      : "border-border bg-surface-2 text-muted hover:text-fg"
-                  }`}
-                >
-                  <Power className="h-3 w-3" /> {r.inPlan ? "En el plan" : "Fuera del plan"}
-                </button>
-                <Badge>{r.exercises.length} ejercicios</Badge>
-                {r.timesPerWeek > 0 && <Badge>×{r.timesPerWeek}/semana</Badge>}
-                {r.estimatedMinutes && <Badge>~{r.estimatedMinutes} min</Badge>}
-              </div>
-              <div className="mt-auto flex items-center gap-1.5">
-                <Button size="sm" variant="ghost" title="Duplicar" onClick={() => duplicate.mutate({ id: r.id })}>
-                  <Copy className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  title={r.isShared ? "Dejar de compartir" : "Compartir con el grupo"}
-                  onClick={() => toggleShare.mutate({ id: r.id })}
-                >
-                  <Share2 className="h-3.5 w-3.5" />
-                </Button>
-                <Button size="sm" variant="ghost" title="Exportar a archivo" onClick={() => exportRoutine(r)}>
-                  <FileDown className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  title="Eliminar"
-                  className="text-red-400"
-                  onClick={() => {
-                    if (confirm(`¿Eliminar la rutina "${r.name}"?`)) remove.mutate({ id: r.id });
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </Card>
-          ))}
+
+                <div className="min-w-0 flex-1">
+                  <Link href={`/rutinas/${r.id}`} className="block">
+                    <p className="flex items-center gap-1.5 truncate font-semibold leading-tight">
+                      <span className="truncate">{r.emoji} {r.name}</span>
+                      {r.isShared && (
+                        <Badge className="shrink-0 bg-accent/15 text-accent">Compartida</Badge>
+                      )}
+                    </p>
+                    {r.description && (
+                      <p className="truncate text-xs text-muted">{r.description}</p>
+                    )}
+                    <p
+                      className="truncate text-xs text-muted"
+                      title={
+                        real
+                          ? `Media de tus ${s!.sessions} ${s!.sessions === 1 ? "sesión terminada" : "sesiones terminadas"} a mano`
+                          : "Valores planificados: aún no hay sesiones terminadas a mano"
+                      }
+                    >
+                      {r.exercises.length} ejercicios
+                      {r.timesPerWeek > 0 && ` · ×${r.timesPerWeek}/sem`}
+                      {minutes ? ` · ${real ? "" : "~"}${minutes} min` : ""}
+                      {sets > 0 && ` · ${sets} series`}
+                      {real && s!.avgVolume > 0 && ` · ${formatKg(s!.avgVolume)}`}
+                    </p>
+                  </Link>
+                </div>
+
+                <div className="flex shrink-0 items-center gap-0.5">
+                  <button
+                    title={r.inPlan ? "Deshabilitar: sacarla del plan" : "Habilitar: incluirla en el plan"}
+                    onClick={() => toggleInPlan.mutate({ id: r.id })}
+                    className={`mr-1 inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-medium transition ${
+                      r.inPlan
+                        ? "border-accent/40 bg-accent/15 text-accent hover:bg-accent/25"
+                        : "border-border bg-surface-2 text-muted hover:text-fg"
+                    }`}
+                  >
+                    <Power className="h-3 w-3" />
+                    <span className="hidden sm:inline">{r.inPlan ? "En el plan" : "Fuera"}</span>
+                  </button>
+                  <Button size="sm" variant="ghost" title="Duplicar" onClick={() => duplicate.mutate({ id: r.id })}>
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    title={r.isShared ? "Dejar de compartir" : "Compartir con el grupo"}
+                    onClick={() => toggleShare.mutate({ id: r.id })}
+                  >
+                    <Share2 className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button size="sm" variant="ghost" title="Exportar a archivo" onClick={() => exportRoutine(r)}>
+                    <FileDown className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    title="Eliminar"
+                    className="text-red-400"
+                    onClick={() => {
+                      if (confirm(`¿Eliminar la rutina "${r.name}"?`)) remove.mutate({ id: r.id });
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </Card>
+            );
+          })}
         </div>
       )}
 

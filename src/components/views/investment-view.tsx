@@ -6,6 +6,7 @@ import { es } from "date-fns/locale";
 import { Wallet, Trash2, AlertTriangle, RefreshCw } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Input, Label, Spinner, Stat } from "@/components/ui";
+import { GymHeader } from "@/components/gym-header";
 
 const FREQUENCIES = [
   { months: 1, label: "Mensual" },
@@ -79,18 +80,15 @@ export function InvestmentView() {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-1.5">
-        <h1 className="flex items-center gap-2 text-2xl font-bold">
-          <Wallet className="h-6 w-6 text-accent" /> Inversión en gimnasio
-        </h1>
-        <p className="text-sm text-muted">
-          🔒 Privado: solo tú ves esta sección. Coste real por sesión según tus asistencias.
-        </p>
-      </div>
+      <GymHeader />
+
+      <h2 className="flex items-center gap-2 text-xl font-bold">
+        <Wallet className="h-5 w-5 text-accent" /> Mi inversión
+      </h2>
 
       {showForm ? (
         <Card className="space-y-4">
-          <h2 className="font-semibold">Configura tu suscripción</h2>
+          <h3 className="font-semibold">Configura tu suscripción</h3>
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <Label>Día del primer pago</Label>
@@ -235,29 +233,45 @@ export function InvestmentView() {
                 sub={data.stats.costPerSessionTotal === null ? "aún sin sesiones" : "cuanto más vas, menos cuesta"}
               />
               <Stat
-                label="Coste mensual"
-                value={euros(data.stats.monthlyCost)}
-                sub="parte proporcional"
+                label={data.stats.isLongPeriod ? "Coste por periodo" : "Coste mensual"}
+                value={
+                  data.stats.isLongPeriod
+                    ? euros(data.stats.periodCost)
+                    : euros(data.stats.monthlyCost)
+                }
+                sub={
+                  data.stats.isLongPeriod
+                    ? `cada ${data.stats.periodMonths} meses`
+                    : "parte proporcional"
+                }
               />
             </div>
 
             <Card className="p-0">
               <div className="grid grid-cols-3 gap-2 border-b border-border px-4 py-2.5 text-xs font-semibold uppercase text-muted">
-                <span>Mes</span>
+                <span>{data.stats.isLongPeriod ? "Periodo pagado" : "Mes"}</span>
                 <span className="text-center">Sesiones</span>
                 <span className="text-right">€ / sesión</span>
               </div>
-              {data.stats.months.map((m) => (
-                <div key={m.month} className="grid grid-cols-3 gap-2 border-b border-border px-4 py-2.5 text-sm last:border-0">
+              {data.stats.rows.map((row) => (
+                <div key={row.key} className="grid grid-cols-3 gap-2 border-b border-border px-4 py-2.5 text-sm last:border-0">
                   <span className="capitalize">
-                    {format(new Date(`${m.month}-01T00:00:00`), "MMMM yyyy", { locale: es })}
+                    {data.stats!.isLongPeriod
+                      ? `${format(row.from, "MMM yyyy", { locale: es })} – ${format(row.to, "MMM yyyy", { locale: es })}`
+                      : format(row.from, "MMMM yyyy", { locale: es })}
                   </span>
-                  <span className="text-center">{m.sessions}</span>
-                  <span className={`text-right font-medium ${m.costPerSession === null ? "text-muted" : "text-accent"}`}>
-                    {m.costPerSession !== null ? euros(m.costPerSession) : "sin sesiones"}
+                  <span className="text-center">{row.sessions}</span>
+                  <span className={`text-right font-medium ${row.costPerSession === null ? "text-muted" : "text-accent"}`}>
+                    {row.costPerSession !== null ? euros(row.costPerSession) : "sin sesiones"}
                   </span>
                 </div>
               ))}
+              {data.stats.isLongPeriod && (
+                <p className="px-4 py-2.5 text-[11px] text-muted">
+                  Tu plan se paga por periodos de {data.stats.periodMonths} meses, así que el coste
+                  por sesión se calcula sobre el periodo completo y no mes a mes.
+                </p>
+              )}
             </Card>
           </>
         )

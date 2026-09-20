@@ -48,8 +48,15 @@ model User {
   // Días de entrenamiento planificados por semana (0 = sin configurar)
   weeklyTargetDays Int @default(0)
 
-  // Mostrar u ocultar el apartado de inversión
+  // (legado) El apartado Gym ya no se puede ocultar desde Ajustes
   investmentEnabled Boolean @default(true)
+
+  // Gimnasio de referencia del apartado Gym. Las coordenadas solo se guardan
+  // cuando la ubicación se elige en el buscador.
+  gymName    String?
+  gymAddress String?
+  gymLat     Float?
+  gymLng     Float?
 
   // Tutorial de bienvenida ya completado
   onboardingDone Boolean @default(false)
@@ -206,6 +213,7 @@ model Routine {
   recommendedDays  Int[]    @default([]) // (legado, ya no se usa en la UI)
   timesPerWeek     Int      @default(1) // cuántos días a la semana se hace esta rutina
   inPlan           Boolean  @default(true) // incluida en el plan de entrenamiento
+  order            Int      @default(0) // posición en el plan de entrenamiento (la fija el usuario)
   estimatedMinutes Int?
   isShared         Boolean  @default(false)
   clonedFromId     String?

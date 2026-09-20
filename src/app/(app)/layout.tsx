@@ -23,7 +23,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="min-h-dvh">
         <Sidebar />
         <MobileHeader />
-        <main className="px-4 pb-36 pt-[4.5rem] md:ml-60 md:px-8 md:pb-10 md:pt-8">
+        <main className="px-4 pb-36 pt-[calc(4.5rem+env(safe-area-inset-top))] md:ml-60 md:px-8 md:pb-10 md:pt-8">
           <div className="mx-auto max-w-5xl"><PageTransition>{children}</PageTransition></div>
         </main>
         <FloatingDock />

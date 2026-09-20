@@ -47,6 +47,14 @@ export type AppUpdate = {
 /** De la más reciente a la más antigua. */
 export const APP_UPDATES: AppUpdate[] = [
   {
+    id: "v3.16-interfaz-progreso-gym",
+    date: "2026-09-20",
+    emoji: "✨",
+    title: "Interfaz nueva, progreso a la vista y tu gym",
+    description:
+      "Hemos reorganizado la app: Inicio va al grano y Entrenamiento se queda en tres pestañas (tu plan con el historial, progreso y récords). En Progreso ves de un vistazo si subes, te mantienes o bajas en cada rutina y ejercicio. Y el apartado Inversión pasa a llamarse Gym: ya puedes fijar tu gimnasio y su ubicación… que de ahí se vienen cositas 👀",
+  },
+  {
     id: "temporadas-trimestrales",
     date: "2026-08-17",
     emoji: "🏆",

@@ -87,6 +87,7 @@ export const userRouter = createTRPCRouter({
         role: true, currentStreak: true, bestStreak: true, createdAt: true, notifyPrefs: true,
         weeklyTargetDays: true, investmentEnabled: true, onboardingDone: true,
         deletionRequestedAt: true,
+        gymName: true, gymAddress: true, gymLat: true, gymLng: true,
       },
     }),
   ),
@@ -112,6 +113,77 @@ export const userRouter = createTRPCRouter({
     .mutation(({ ctx, input }) =>
       ctx.db.user.update({ where: { id: ctx.session.user.id }, data: input }),
     ),
+
+  /**
+   * Gimnasio de referencia del apartado Gym. Se puede guardar solo con el
+   * nombre: la dirección y las coordenadas llegan si se elige en el buscador.
+   */
+  setGym: protectedProcedure
+    .input(
+      z.object({
+        name: z.string().trim().max(80).nullable(),
+        address: z.string().trim().max(200).nullable().default(null),
+        lat: z.number().min(-90).max(90).nullable().default(null),
+        lng: z.number().min(-180).max(180).nullable().default(null),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      ctx.db.user.update({
+        where: { id: ctx.session.user.id },
+        data: {
+          gymName: input.name || null,
+          gymAddress: input.address || null,
+          gymLat: input.lat,
+          gymLng: input.lng,
+        },
+        select: { gymName: true, gymAddress: true, gymLat: true, gymLng: true },
+      }),
+    ),
+
+  /**
+   * Buscador de sitios (OpenStreetMap / Nominatim). Se consulta desde el
+   * servidor porque el servicio exige identificarse con un User-Agent propio.
+   * Si falla o tarda, se devuelve una lista vacía: el nombre siempre se puede
+   * escribir a mano.
+   */
+  searchPlaces: protectedProcedure
+    .input(z.object({ query: z.string().trim().min(3).max(120) }))
+    .query(async ({ input }) => {
+      const url = new URL("https://nominatim.openstreetmap.org/search");
+      url.searchParams.set("q", input.query);
+      url.searchParams.set("format", "jsonv2");
+      url.searchParams.set("limit", "6");
+      url.searchParams.set("addressdetails", "1");
+      try {
+        const response = await fetch(url, {
+          headers: {
+            "User-Agent": "GymBros/1.0 (https://github.com/silab3d/gymbros)",
+            "Accept-Language": "es",
+          },
+          signal: AbortSignal.timeout(6000),
+        });
+        if (!response.ok) return [];
+        const places = (await response.json()) as Array<{
+          place_id: number;
+          name?: string;
+          display_name: string;
+          lat: string;
+          lon: string;
+        }>;
+        return places.map((place) => {
+          const parts = place.display_name.split(",").map((x) => x.trim());
+          return {
+            id: String(place.place_id),
+            name: place.name?.trim() || parts[0] || place.display_name,
+            address: parts.slice(1).join(", ") || place.display_name,
+            lat: Number(place.lat),
+            lng: Number(place.lon),
+          };
+        });
+      } catch {
+        return [];
+      }
+    }),
 
   completeOnboarding: protectedProcedure.mutation(({ ctx }) =>
     ctx.db.user.update({

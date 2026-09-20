@@ -1,82 +1,87 @@
 import type { PrismaClient } from "@prisma/client";
 import { syncWeeklyTarget } from "./weekly-target";
 
+type PlannedRoutine = { id: string; timesPerWeek: number; inPlan: boolean; order: number };
+
 /**
- * Reconcilia el plan con las rutinas: cada rutina habilitada aparece
- * EXACTAMENTE «timesPerWeek» veces. Se ejecuta en cada lectura del plan
- * (pestaña Plan y panel principal) para que nunca se desincronicen.
+ * Secuencia del plan a partir del ORDEN de las rutinas: cada rutina aparece
+ * tantas veces como sus «veces por semana», repartidas en vueltas sucesivas
+ * para que no se repita la misma dos días seguidos siempre que se pueda.
+ *
+ * Con A×3, B×2 y C×1 en ese orden sale A · B · C · A · B · A.
  */
-export async function reconcilePlan(db: PrismaClient, userId: string): Promise<boolean> {
-  const routines = await db.routine.findMany({
-    where: { userId },
-    select: { id: true, timesPerWeek: true, inPlan: true },
-  });
-  const desired = new Map(routines.map((r) => [r.id, r.inPlan ? r.timesPerWeek : 0]));
-  const current = await db.planSlot.findMany({ where: { userId }, orderBy: { order: "asc" } });
+export function planSequence(routines: PlannedRoutine[]): string[] {
+  // Llegan ya ordenadas; el orden entre iguales lo decide quien las consulta.
+  const remaining = routines
+    .filter((r) => r.inPlan && r.timesPerWeek > 0)
+    .map((r) => ({ id: r.id, left: r.timesPerWeek }));
 
-  const seen = new Map<string, number>();
-  const toDelete: string[] = [];
-  for (const slot of current) {
-    const count = (seen.get(slot.routineId ?? "") ?? 0) + 1;
-    seen.set(slot.routineId ?? "", count);
-    if (count > (desired.get(slot.routineId ?? "") ?? 0)) toDelete.push(slot.id);
-  }
-  const additions: string[] = [];
-  for (const r of routines) {
-    const want = r.inPlan ? r.timesPerWeek : 0;
-    for (let i = seen.get(r.id) ?? 0; i < want; i++) additions.push(r.id);
-  }
-
-  const changed = toDelete.length > 0 || additions.length > 0;
-
-  // Camino rápido: si el plan ya está sincronizado, no se escribe nada
-  if (!changed) {
-    const restDays = current.some((s) => s.routineId === null);
-    if (!restDays) {
-      const user = await db.user.findUniqueOrThrow({
-        where: { id: userId },
-        select: { planPosition: true, planNeedsReview: true, weeklyTargetDays: true },
-      });
-      const target = Math.min(7, routines.reduce((a, r) => a + (r.inPlan ? r.timesPerWeek : 0), 0));
-      const positionOk = current.length === 0 || user.planPosition < current.length;
-      const orderOk = current.every((s, i) => s.order === i);
-      if (user.weeklyTargetDays === target && positionOk && orderOk) {
-        return user.planNeedsReview;
-      }
+  const sequence: string[] = [];
+  let placed = true;
+  while (placed) {
+    placed = false;
+    for (const r of remaining) {
+      if (r.left <= 0) continue;
+      sequence.push(r.id);
+      r.left -= 1;
+      placed = true;
     }
   }
+  return sequence;
+}
 
-  // Camino completo: hay cambios que aplicar
-  await db.planSlot.deleteMany({ where: { userId, routineId: null } });
-  await syncWeeklyTarget(db, userId);
-  if (toDelete.length > 0) {
-    await db.planSlot.deleteMany({ where: { id: { in: toDelete } } });
-  }
-  if (additions.length > 0) {
-    const last = await db.planSlot.findFirst({ where: { userId }, orderBy: { order: "desc" } });
-    let next = (last?.order ?? -1) + 1;
-    await db.planSlot.createMany({
-      data: additions.map((routineId) => ({ userId, routineId, order: next++ })),
-    });
-  }
+/**
+ * Reconcilia el plan con las rutinas: la secuencia de slots tiene que ser
+ * exactamente la que dictan el orden y las «veces por semana» de las rutinas.
+ * Se ejecuta en cada lectura del plan (pestaña Entrenamiento y panel) para que
+ * nunca se desincronicen.
+ */
+export async function reconcilePlan(db: PrismaClient, userId: string): Promise<boolean> {
+  // El orden de la consulta importa: con varias rutinas en la misma posición
+  // (por ejemplo, todas a 0 tras la actualización) el desempate tiene que ser
+  // siempre el mismo o el plan se reescribiría en cada lectura.
+  const routines = await db.routine.findMany({
+    where: { userId },
+    orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+    select: { id: true, timesPerWeek: true, inPlan: true, order: true },
+  });
+  const desired = planSequence(routines);
+  const current = await db.planSlot.findMany({ where: { userId }, orderBy: { order: "asc" } });
 
-  // Reindexar SIEMPRE (los borrados en cascada dejan huecos) y acotar la posición
-  const slots = await db.planSlot.findMany({ where: { userId }, orderBy: { order: "asc" } });
-  await Promise.all(
-    slots.map((s, i) =>
-      s.order === i ? null : db.planSlot.update({ where: { id: s.id }, data: { order: i } }),
-    ),
-  );
+  const inSync =
+    current.length === desired.length &&
+    current.every((s, i) => s.routineId === desired[i] && s.order === i);
+
   const user = await db.user.findUniqueOrThrow({
     where: { id: userId },
-    select: { planPosition: true, planNeedsReview: true },
+    select: { planPosition: true, weeklyTargetDays: true },
   });
-  if (slots.length > 0 && user.planPosition >= slots.length) {
-    await db.user.update({ where: { id: userId }, data: { planPosition: 0 } });
+  const target = Math.min(7, routines.reduce((acc, r) => acc + (r.inPlan ? r.timesPerWeek : 0), 0));
+
+  // Camino rápido: el plan ya está como debe y no se escribe nada
+  if (inSync) {
+    if (user.weeklyTargetDays !== target) await syncWeeklyTarget(db, userId);
+    if (desired.length > 0 && user.planPosition >= desired.length) {
+      await db.user.update({ where: { id: userId }, data: { planPosition: 0 } });
+    }
+    return false;
   }
-  // Avisar de que conviene revisar el orden tras un cambio automático
-  if (changed && !user.planNeedsReview) {
-    await db.user.update({ where: { id: userId }, data: { planNeedsReview: true } });
+
+  // La rutina que tocaba sigue tocando: se busca su primera aparición en la
+  // nueva secuencia para no perder por dónde iba el usuario.
+  const pending = current.length > 0 ? current[user.planPosition % current.length]?.routineId : null;
+  const recovered = pending ? desired.indexOf(pending) : -1;
+
+  await db.planSlot.deleteMany({ where: { userId } });
+  if (desired.length > 0) {
+    await db.planSlot.createMany({
+      data: desired.map((routineId, order) => ({ userId, routineId, order })),
+    });
   }
-  return changed || user.planNeedsReview;
+  await db.user.update({
+    where: { id: userId },
+    data: { planPosition: recovered > 0 ? recovered : 0 },
+  });
+  await syncWeeklyTarget(db, userId);
+  return true;
 }

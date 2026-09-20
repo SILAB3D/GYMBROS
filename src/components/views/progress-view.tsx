@@ -1,9 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
-import { TrendingUp, TrendingDown, Minus, HelpCircle } from "lucide-react";
+import { ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import type { inferRouterOutputs } from "@trpc/server";
 import { api } from "@/trpc/react";
 import type { AppRouter } from "@/server/api/root";
@@ -12,118 +10,88 @@ import { cn } from "@/lib/utils";
 
 type Direction = "up" | "flat" | "down" | "unknown";
 
-const STYLES: Record<Direction, { card: string; text: string; label: string; icon: typeof TrendingUp }> = {
-  up: {
-    card: "border-accent/50 bg-accent/10",
-    text: "text-accent",
-    label: "Progresando",
-    icon: TrendingUp,
-  },
-  flat: {
-    card: "border-amber-400/50 bg-amber-400/10",
-    text: "text-amber-400",
-    label: "Estancado",
-    icon: Minus,
-  },
-  down: {
-    card: "border-red-500/50 bg-red-500/15",
-    text: "text-red-400",
-    label: "Retrocediendo",
-    icon: TrendingDown,
-  },
-  unknown: {
-    card: "border-border bg-surface",
-    text: "text-muted",
-    label: "Sin datos",
-    icon: HelpCircle,
-  },
+/** Sesiones que se comparan a cada lado, a juego con el cálculo del servidor. */
+const RECENT_SESSIONS = 2;
+const PREVIOUS_SESSIONS = 3;
+const MIN_SESSIONS = RECENT_SESSIONS + PREVIOUS_SESSIONS;
+/** Margen que se considera estancamiento. */
+const FLAT_PCT = 5;
+
+const STYLES: Record<Direction, { card: string; text: string; icon: typeof ArrowUp }> = {
+  up: { card: "border-accent/50 bg-accent/10", text: "text-accent", icon: ArrowUp },
+  flat: { card: "border-amber-400/50 bg-amber-400/10", text: "text-amber-400", icon: ArrowUpDown },
+  down: { card: "border-red-500/50 bg-red-500/15", text: "text-red-400", icon: ArrowDown },
+  unknown: { card: "border-border bg-surface", text: "text-muted", icon: ArrowUpDown },
 };
 
 const nf = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 0 });
 
-/** Variación (en %) que llena por completo media barra. */
-const SCALE_PCT = 50;
-/** Margen que se considera estancamiento, a juego con el cálculo del servidor. */
-const FLAT_PCT = 5;
+type RoutineTrend = inferRouterOutputs<AppRouter>["stats"]["routineTrends"][number];
+type ExerciseTrend = RoutineTrend["exercises"][number];
 
 /**
- * Barra divergente de progreso: el 0% está en el centro, el avance crece hacia
- * la derecha y el retroceso hacia la izquierda. El color ya distingue el
- * estancamiento, así que la barra no dibuja ninguna franja extra.
+ * Etiqueta de progreso: título, el porcentaje en grande con su flecha y, en
+ * pequeño, el volumen de la última sesión. Nada más: de un vistazo se ve si
+ * eso sube, baja o se queda donde estaba.
  */
-function TrendBar({ changePct, className }: { changePct: number | null; className?: string }) {
-  const pct = changePct ?? 0;
-  const half = (Math.min(Math.abs(pct), SCALE_PCT) / SCALE_PCT) * 50;
+function TrendLabel({
+  title,
+  direction,
+  changePct,
+  volume,
+  unit,
+  sessions,
+  size = "md",
+}: {
+  title: string;
+  direction: Direction;
+  changePct: number | null;
+  volume: number | null;
+  unit: "kg" | "reps";
+  sessions: number;
+  size?: "md" | "lg";
+}) {
+  const style = STYLES[direction];
+  const Icon = style.icon;
+  const enough = sessions >= MIN_SESSIONS;
+
   return (
-    <div
-      className="relative h-2 w-full overflow-hidden rounded-full bg-black/30"
-      title={
-        changePct === null
-          ? "Sin datos suficientes para calcular la tendencia"
-          : `${pct > 0 ? "+" : ""}${pct.toFixed(0)}% de volumen (escala ±${SCALE_PCT}%)`
-      }
-    >
-      {/* Marca del 0%, desde donde arranca la barra a un lado o al otro */}
-      <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/50" />
-      {changePct !== null && (
-        <span
-          className={cn("absolute inset-y-0 rounded-full bg-current", className)}
-          style={pct >= 0 ? { left: "50%", width: `${half}%` } : { right: "50%", width: `${half}%` }}
-        />
+    <div className={cn("rounded-2xl border p-3", style.card, size === "lg" && "p-4")}>
+      <p
+        className={cn(
+          "truncate font-bold leading-tight",
+          size === "lg" ? "text-lg" : "text-xs",
+        )}
+      >
+        {title}
+      </p>
+
+      {enough ? (
+        <>
+          <div className={cn("mt-1 flex items-center gap-1", style.text)}>
+            <span className={cn("font-black leading-none", size === "lg" ? "text-4xl" : "text-2xl")}>
+              {changePct === null ? "—" : `${changePct > 0 ? "+" : ""}${changePct.toFixed(0)}%`}
+            </span>
+            <Icon className={cn("shrink-0", size === "lg" ? "h-9 w-9" : "h-6 w-6")} strokeWidth={2.75} />
+          </div>
+          <p className={cn("mt-0.5 truncate text-muted", size === "lg" ? "text-xs" : "text-[10px]")}>
+            {volume === null ? "sin volumen" : `${nf.format(volume)} ${unit === "kg" ? "kg" : "reps"}`}
+          </p>
+        </>
+      ) : (
+        <p className={cn("mt-1 text-muted", size === "lg" ? "text-sm" : "text-[10px]")}>
+          Faltan {MIN_SESSIONS - sessions}{" "}
+          {MIN_SESSIONS - sessions === 1 ? "sesión" : "sesiones"}
+        </p>
       )}
     </div>
   );
 }
 
-type RoutineTrend = inferRouterOutputs<AppRouter>["stats"]["routineTrends"][number];
-
 /**
- * Tendencia de la rutina completa: la suma del volumen de todas sus sesiones.
- * Es el titular que faltaba, porque una rutina puede ir hacia arriba aunque un
- * par de ejercicios sueltos estén estancados (y al revés).
- */
-function RoutineOverall({ routine }: { routine: RoutineTrend }) {
-  const o = routine.overall;
-  const style = STYLES[o.direction as Direction];
-  const Icon = style.icon;
-  const pct = o.changePct;
-
-  return (
-    <div className={cn("space-y-3 rounded-2xl border p-4", style.card)}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs uppercase tracking-wide text-muted">Rutina completa</p>
-          <p className="truncate text-lg font-bold">
-            {routine.emoji} {routine.name}
-          </p>
-        </div>
-        <span className={cn("flex shrink-0 items-center gap-1 text-lg font-bold", style.text)}>
-          <Icon className="h-5 w-5" />
-          {pct === null ? "—" : `${pct > 0 ? "+" : ""}${pct.toFixed(0)}%`}
-        </span>
-      </div>
-
-      <TrendBar changePct={pct} className={style.text} />
-
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-xs">
-        <span className={cn("font-semibold", style.text)}>{style.label}</span>
-        <span className="text-muted">
-          {o.sessions === 0
-            ? "Sin sesiones registradas"
-            : `${o.sessions} ${o.sessions === 1 ? "sesión" : "sesiones"}`}
-          {o.last !== null && ` · última ${nf.format(o.last)} ${o.unit === "kg" ? "kg" : "reps"}`}
-          {o.best !== null && ` · mejor ${nf.format(o.best)}`}
-          {o.lastDate && ` · ${format(o.lastDate, "d MMM yyyy", { locale: es })}`}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Progreso de entrenamiento: primero la rutina completa y después un cuadro
- * compacto por cada ejercicio, con la tendencia de su volumen a lo largo del
- * tiempo (media de las 3 últimas sesiones frente a las 3 anteriores).
+ * Progreso de entrenamiento: la rutina completa y, debajo, cada ejercicio.
+ * Se compara la media de las 2 últimas sesiones con la de las 3 anteriores, así
+ * que hasta la quinta sesión no hay nada que enseñar.
  */
 export function ProgressView() {
   const { data: routines, isLoading } = api.stats.routineTrends.useQuery();
@@ -136,22 +104,22 @@ export function ProgressView() {
       <EmptyState
         icon="📈"
         title="Todavía no hay nada que analizar"
-        subtitle="Crea una rutina y entrena un par de veces para ver la tendencia de cada ejercicio"
+        subtitle={`Crea una rutina y entrénala ${MIN_SESSIONS} veces para ver tu progreso`}
       />
     );
   }
 
   const routine = routines.find((r) => r.id === selected) ?? routines[0]!;
+  const overall = routine.overall;
+  const enough = overall.sessions >= MIN_SESSIONS;
 
   return (
     <div className="space-y-5">
       <div className="space-y-1">
         <h1 className="text-2xl font-bold">Progreso</h1>
         <p className="text-sm text-muted">
-          Volumen de las 3 últimas sesiones frente a las 3 anteriores.{" "}
-          <span className="text-accent">Verde</span> si subes más de un 5%,{" "}
-          <span className="text-amber-400">ámbar</span> si te mantienes dentro de ±5%,{" "}
-          <span className="text-red-400">rojo</span> si retrocedes.
+          Media de volumen de las {RECENT_SESSIONS} últimas sesiones frente a las{" "}
+          {PREVIOUS_SESSIONS} anteriores.
         </p>
       </div>
 
@@ -173,66 +141,52 @@ export function ProgressView() {
         ))}
       </div>
 
-      {/* Progreso de la rutina entera, antes del detalle ejercicio a ejercicio */}
-      <RoutineOverall routine={routine} />
+      {enough ? (
+        <>
+          <TrendLabel
+            title={`${routine.emoji} ${routine.name}`}
+            direction={overall.direction as Direction}
+            changePct={overall.changePct}
+            volume={overall.last}
+            unit={overall.unit}
+            sessions={overall.sessions}
+            size="lg"
+          />
 
-      <h2 className="pt-1 text-sm font-semibold uppercase tracking-wide text-muted">
-        Por ejercicio
-      </h2>
-
-      {routine.exercises.length === 0 ? (
-        <EmptyState icon="🗒️" title="Esta rutina no tiene ejercicios" />
+          {routine.exercises.length > 0 && (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {routine.exercises.map((ex: ExerciseTrend) => (
+                <TrendLabel
+                  key={ex.id}
+                  title={ex.name}
+                  direction={ex.direction as Direction}
+                  changePct={ex.changePct}
+                  volume={ex.last}
+                  unit={ex.unit}
+                  sessions={ex.sessions}
+                />
+              ))}
+            </div>
+          )}
+        </>
       ) : (
-        <div className="grid grid-cols-2 gap-2">
-          {routine.exercises.map((ex) => {
-            const style = STYLES[ex.direction as Direction];
-            const Icon = style.icon;
-            const pct = ex.changePct;
-            return (
-              <div
-                key={ex.id}
-                className={cn("space-y-1.5 rounded-xl border p-2.5", style.card)}
-                title={
-                  ex.lastDate
-                    ? `${ex.name} · ${style.label} · última sesión el ${format(ex.lastDate, "d MMM yyyy", { locale: es })}`
-                    : `${ex.name} · ${style.label}`
-                }
-              >
-                <p className="truncate text-xs font-semibold leading-tight">{ex.name}</p>
-
-                <div className="flex items-baseline justify-between gap-1">
-                  <span className={cn("truncate text-sm font-bold", style.text)}>
-                    {ex.last === null
-                      ? "—"
-                      : `${nf.format(ex.last)} ${ex.unit === "kg" ? "kg" : "reps"}`}
-                  </span>
-                  <span className={cn("flex shrink-0 items-center gap-0.5 text-[11px] font-bold", style.text)}>
-                    <Icon className="h-3 w-3" />
-                    {pct === null ? "—" : `${pct > 0 ? "+" : ""}${pct.toFixed(0)}%`}
-                  </span>
-                </div>
-
-                <TrendBar changePct={pct} className={style.text} />
-
-                <p className="truncate text-[10px] text-muted">
-                  {style.label}
-                  {ex.sessions > 0 && ` · ${ex.sessions} ${ex.sessions === 1 ? "sesión" : "sesiones"}`}
-                </p>
-              </div>
-            );
-          })}
-        </div>
+        <EmptyState
+          icon="⏳"
+          title={`Te faltan ${MIN_SESSIONS - overall.sessions} ${
+            MIN_SESSIONS - overall.sessions === 1 ? "sesión" : "sesiones"
+          }`}
+          subtitle={`Hacen falta ${MIN_SESSIONS} sesiones de esta rutina para medir el progreso. Llevas ${overall.sessions}.`}
+        />
       )}
 
       <Card className="py-3 text-xs text-muted">
-        El volumen de una sesión son los kg levantados (peso × repeticiones de las series
-        completadas). En los ejercicios marcados como «sin peso» se cuentan las repeticiones
-        totales. El de la rutina completa suma el de todos sus ejercicios en cada sesión, así que
-        puede avanzar aunque algún ejercicio suelto se estanque. En la barra, el 0% está en el
-        centro: el avance crece hacia la derecha y el
-        retroceso hacia la izquierda, con la escala llena a ±{SCALE_PCT}%. Por debajo de ±
-        {FLAT_PCT}% se considera estancamiento. Hacen falta al menos 2 sesiones para calcular una
-        tendencia.
+        El progreso compara la media de volumen de tus {RECENT_SESSIONS} últimas sesiones con la
+        media de las {PREVIOUS_SESSIONS} anteriores, así que hacen falta {MIN_SESSIONS} sesiones
+        para calcularlo. El volumen de una sesión son los kg levantados (peso × repeticiones de las
+        series completadas); en los ejercicios marcados como «sin peso» se cuentan las repeticiones
+        totales, y el de la rutina suma el de todos sus ejercicios. Por encima de +{FLAT_PCT}% la
+        flecha sube y la etiqueta es verde; por debajo de −{FLAT_PCT}% baja y se pone roja; entre
+        medias la flecha es de doble punta y la etiqueta ámbar: ahí ni subes ni bajas.
       </Card>
     </div>
   );

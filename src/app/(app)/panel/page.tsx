@@ -10,12 +10,11 @@ import { MonthCalendar } from "@/components/month-calendar";
 import { PointsBreakdown } from "@/components/points-breakdown";
 import { StreakProgress } from "@/components/streak-progress";
 import { SeasonPanel } from "@/components/season-panel";
-import { StatsPanel } from "@/components/stats-panel";
+import { YearSummary } from "@/components/year-summary";
 import { WorkoutLauncher } from "@/components/workout-launcher";
 
 
 export default function DashboardPage() {
-  const utils = api.useUtils();
   const { data, isLoading } = api.dashboard.summary.useQuery();
 
   if (isLoading || !data) return <Spinner />;
@@ -51,24 +50,14 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      {/* Temporada y progreso de racha */}
+      {/* Temporada y racha */}
       <div className="grid items-stretch gap-4 md:grid-cols-2">
         <SeasonPanel season={data.season} />
         <StreakProgress streak={data.user.currentStreak} rules={data.streakRules} />
       </div>
 
-
-      {/* Resumen de estadísticas */}
-      <StatsPanel
-        streak={data.user.currentStreak}
-        bestStreak={data.user.bestStreak}
-        rankingPosition={data.rankingPosition}
-        weekPoints={data.myWeekPoints}
-        weekAttendances={data.weekAttendances}
-        weeklyTarget={data.user.weeklyTargetDays}
-        totalVolume={data.totalVolume}
-        totalWorkouts={data.totalWorkouts}
-      />
+      {/* Constancia del último año */}
+      <YearSummary workouts={data.yearAttendances} monthlyAvg={data.monthlyAvgWorkouts} />
 
       <div className="grid gap-6 md:grid-cols-2">
 
@@ -78,9 +67,6 @@ export default function DashboardPage() {
             <h2 className="font-semibold capitalize">
               {format(now, "MMMM yyyy", { locale: es })}
             </h2>
-            <Link href="/entrenamiento?tab=asistencia" className="text-xs text-accent hover:underline">
-              Ver todo
-            </Link>
           </div>
           <MonthCalendar
             year={now.getFullYear()}

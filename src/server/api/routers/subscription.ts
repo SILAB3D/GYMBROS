@@ -1,11 +1,14 @@
 import { z } from "zod";
-import { addMonths, startOfMonth, subMonths, format, startOfDay } from "date-fns";
+import { addMonths, startOfMonth, endOfMonth, subMonths, format, startOfDay } from "date-fns";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 
 /**
  * Calculadora de inversión. Sin renovación automática, la suscripción caduca al
  * final del periodo pagado y hay que confirmar cada renovación a mano.
  */
+
+/** A partir de aquí la suscripción se mira por periodos pagados, no por meses. */
+const LONG_PERIOD_MONTHS = 12;
 
 function coverage(sub: { startDate: Date; periodMonths: number; autoRenew: boolean; confirmedPeriods: number }) {
   const now = new Date();
@@ -54,18 +57,45 @@ export const subscriptionRouter = createTRPCRouter({
     });
     const totalSessions = attendances.length;
 
-    const firstMonth = startOfMonth(start);
-    const windowStart = startOfMonth(subMonths(now, 11));
-    const from = firstMonth > windowStart ? firstMonth : windowStart;
-    const months: Array<{ month: string; sessions: number; costPerSession: number | null }> = [];
-    for (let m = startOfMonth(now); m >= from; m = subMonths(m, 1)) {
-      const key = format(m, "yyyy-MM");
-      const sessions = attendances.filter((a) => format(a.date, "yyyy-MM") === key).length;
-      months.push({
-        month: key,
-        sessions,
-        costPerSession: sessions > 0 ? Math.round((monthlyCost / sessions) * 100) / 100 : null,
-      });
+    /**
+     * Desglose del coste por sesión. En las suscripciones de un año o más el
+     * pago no es mensual, así que repartirlo por meses daría un coste inventado:
+     * cada fila es entonces un periodo pagado completo y su precio real.
+     */
+    const isLong = sub.periodMonths >= LONG_PERIOD_MONTHS;
+    const rows: Array<{
+      key: string; from: Date; to: Date; sessions: number; costPerSession: number | null;
+    }> = [];
+
+    if (isLong) {
+      for (let p = payments - 1; p >= 0; p--) {
+        const from = addMonths(start, p * sub.periodMonths);
+        const to = addMonths(from, sub.periodMonths);
+        if (from > now) continue;
+        const sessions = attendances.filter((a) => a.date >= from && a.date < to).length;
+        rows.push({
+          key: format(from, "yyyy-MM-dd"),
+          from,
+          to,
+          sessions,
+          costPerSession: sessions > 0 ? Math.round((sub.price / sessions) * 100) / 100 : null,
+        });
+      }
+    } else {
+      const firstMonth = startOfMonth(start);
+      const windowStart = startOfMonth(subMonths(now, 11));
+      const from = firstMonth > windowStart ? firstMonth : windowStart;
+      for (let m = startOfMonth(now); m >= from; m = subMonths(m, 1)) {
+        const key = format(m, "yyyy-MM");
+        const sessions = attendances.filter((a) => format(a.date, "yyyy-MM") === key).length;
+        rows.push({
+          key,
+          from: m,
+          to: endOfMonth(m),
+          sessions,
+          costPerSession: sessions > 0 ? Math.round((monthlyCost / sessions) * 100) / 100 : null,
+        });
+      }
     }
 
     return {
@@ -77,10 +107,13 @@ export const subscriptionRouter = createTRPCRouter({
         expired,
         nextPayment,
         monthlyCost: Math.round(monthlyCost * 100) / 100,
+        periodCost: Math.round(sub.price * 100) / 100,
+        periodMonths: sub.periodMonths,
+        isLongPeriod: isLong,
         totalSessions,
         costPerSessionTotal:
           totalSessions > 0 ? Math.round((totalPaid / totalSessions) * 100) / 100 : null,
-        months,
+        rows,
       },
     };
   }),
