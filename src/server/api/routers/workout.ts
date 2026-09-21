@@ -2,6 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { finishWorkout, autoCloseStaleWorkouts, notifyWorkoutStartedIfDue } from "@/server/services/workout-service";
+import { applyWorkoutIncident, MAX_INCIDENT_CHANGES } from "@/server/services/workout-incident-service";
 
 /** Cuántas sesiones anteriores se promedian para proponer peso y reps. */
 const SUGGESTION_SAMPLE = 5;
@@ -36,6 +37,17 @@ function averageSets(
   });
   return averages;
 }
+
+/**
+ * Cuánto tiene que dispararse un valor sobre lo que se venía haciendo para
+ * sospechar que es una errata: casi el doble Y al menos 5 kg (o 5 reps) de
+ * salto. Las dos condiciones a la vez, porque por separado avisan de más:
+ * pasar de 2,5 a 5 kg en un ejercicio pequeño es normal, y +5 kg sobre 100
+ * también.
+ */
+const OUTLIER_RATIO = 1.8;
+const OUTLIER_ABS_KG = 5;
+const OUTLIER_ABS_REPS = 5;
 
 export const workoutRouter = createTRPCRouter({
   // Iniciar sesión de entrenamiento (opcionalmente desde una rutina)
@@ -146,6 +158,86 @@ export const workoutRouter = createTRPCRouter({
     return { ...workout, totalSets, doneSets };
   }),
 
+  /**
+   * Series del entreno en curso que se salen mucho de lo registrado hasta
+   * ahora. Se consulta al ir a terminar la rutina para poder preguntar
+   * "¿seguro que son 18 y no 10?": teclear con prisa en el gimnasio produce
+   * erratas y, una vez guardadas, contaminan medias, PRs y gráficas.
+   *
+   * Solo mira series completadas (las únicas que se guardan) y compara con el
+   * máximo de las últimas sesiones del mismo ejercicio. Sin historial no hay
+   * con qué comparar, así que no se avisa de nada.
+   */
+  outliers: protectedProcedure
+    .input(z.object({ workoutId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const workout = await ctx.db.workout.findUnique({
+        where: { id: input.workoutId },
+        include: {
+          exercises: {
+            orderBy: { order: "asc" },
+            include: { exercise: true, sets: { orderBy: { setNumber: "asc" } } },
+          },
+        },
+      });
+      if (!workout || workout.userId !== ctx.session.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+
+      const found: Array<{
+        setId: string;
+        exercise: string;
+        setNumber: number;
+        unit: "kg" | "reps";
+        value: number;
+        previous: number;
+      }> = [];
+
+      await Promise.all(
+        workout.exercises.map(async (we) => {
+          const done = we.sets.filter((s) => s.completed);
+          if (done.length === 0) return;
+
+          const history = await ctx.db.workoutExercise.findMany({
+            where: {
+              exerciseId: we.exerciseId,
+              workoutId: { not: workout.id },
+              workout: { userId: ctx.session.user.id, endedAt: { not: null } },
+            },
+            orderBy: { workout: { startedAt: "desc" } },
+            take: SUGGESTION_SAMPLE,
+            select: { sets: { select: { reps: true, weight: true, completed: true } } },
+          });
+
+          const noWeight = we.exercise.noWeight;
+          const previous = Math.max(
+            0,
+            ...history.flatMap((h) =>
+              h.sets.filter((s) => s.completed).map((s) => (noWeight ? s.reps : s.weight)),
+            ),
+          );
+          if (previous <= 0) return; // sin historial no hay errata que detectar
+
+          const minJump = noWeight ? OUTLIER_ABS_REPS : OUTLIER_ABS_KG;
+          for (const s of done) {
+            const value = noWeight ? s.reps : s.weight;
+            if (value >= previous * OUTLIER_RATIO && value - previous >= minJump) {
+              found.push({
+                setId: s.id,
+                exercise: we.exercise.name,
+                setNumber: s.setNumber,
+                unit: noWeight ? "reps" : "kg",
+                value,
+                previous,
+              });
+            }
+          }
+        }),
+      );
+
+      return found.sort(
+        (a, b) => a.exercise.localeCompare(b.exercise) || a.setNumber - b.setNumber,
+      );
+    }),
+
   updateSet: protectedProcedure
     .input(
       z.object({
@@ -255,6 +347,40 @@ export const workoutRouter = createTRPCRouter({
       return finishWorkout(ctx.db, input.workoutId, { notes: input.notes });
     }),
 
+  /**
+   * Incidencia sobre una sesión ya guardada: corrige hasta cuatro valores mal
+   * anotados y rehace lo que aquellos números provocaron (totales, PRs
+   * automáticos y sus puntos). Ver workout-incident-service.
+   */
+  reportIncident: protectedProcedure
+    .input(
+      z.object({
+        workoutId: z.string(),
+        reason: z.string().max(200).optional(),
+        changes: z
+          .array(
+            z.object({
+              setId: z.string(),
+              reps: z.number().int().min(0).max(200).optional(),
+              weight: z.number().min(0).max(1000).optional(),
+            }),
+          )
+          .min(1)
+          .max(MAX_INCIDENT_CHANGES),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const result = await applyWorkoutIncident(
+        ctx.db,
+        ctx.session.user.id,
+        input.workoutId,
+        input.changes,
+        input.reason,
+      );
+      if (!result) throw new TRPCError({ code: "FORBIDDEN" });
+      return result;
+    }),
+
   history: protectedProcedure
     .input(z.object({ limit: z.number().int().min(1).max(100).default(20) }).optional())
     .query(({ ctx, input }) =>
@@ -266,6 +392,7 @@ export const workoutRouter = createTRPCRouter({
             orderBy: { order: "asc" },
             include: { exercise: true, sets: { orderBy: { setNumber: "asc" } } },
           },
+          incidents: { orderBy: { createdAt: "desc" } },
         },
         orderBy: { startedAt: "desc" },
         take: input?.limit ?? 20,

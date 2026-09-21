@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { format, differenceInMinutes, isSameDay } from "date-fns";
 import { es } from "date-fns/locale";
-import { ChevronDown, Check, Trash2 } from "lucide-react";
+import { ChevronDown, Check, Trash2, Wrench } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Button, Card, Badge, Modal, EmptyState, Spinner } from "@/components/ui";
 import { formatKg } from "@/lib/utils";
+import { WorkoutIncidentModal } from "@/components/workout-incident-modal";
 
 /**
  * Historial de entrenamientos: cada sesión terminada, desplegable, con sus
@@ -17,6 +18,8 @@ import { formatKg } from "@/lib/utils";
 export function WorkoutHistoryView() {
   const utils = api.useUtils();
   const [dayDetail, setDayDetail] = useState<Date | null>(null);
+  // Sesión sobre la que se está abriendo una incidencia
+  const [incident, setIncident] = useState<string | null>(null);
   const { data: workouts, isLoading } = api.workout.history.useQuery({ limit: 30 });
   const { data: day, isFetching: dayLoading } = api.attendance.day.useQuery(
     { date: dayDetail ?? new Date() },
@@ -61,6 +64,11 @@ export function WorkoutHistoryView() {
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
+                {w.incidents.length > 0 && (
+                  <Badge className="text-gold" title="Sesión corregida por incidencia">
+                    <Wrench className="h-3 w-3" /> corregida
+                  </Badge>
+                )}
                 <Badge>{formatKg(w.totalVolume)}</Badge>
                 <Badge>{w.totalSets} series</Badge>
                 <ChevronDown className="h-4 w-4 text-muted transition-transform group-open:rotate-180" />
@@ -87,12 +95,28 @@ export function WorkoutHistoryView() {
                 </div>
               ))}
               {w.notes && <p className="text-xs text-muted">📝 {w.notes}</p>}
-              <Button
-                size="sm" variant="ghost" className="text-red-400"
-                onClick={() => setDayDetail(w.startedAt)}
-              >
-                <Trash2 className="h-3.5 w-3.5" /> Borrar este día
-              </Button>
+              {/* Lo que se corrigió, para que la sesión no cambie sin explicación */}
+              {w.incidents.map((inc) => (
+                <p key={inc.id} className="text-xs text-muted">
+                  🔧 Corregida el {format(inc.createdAt, "d MMM yyyy", { locale: es })}
+                  {inc.reason ? `: ${inc.reason}` : ""}
+                  {inc.pointsDelta !== 0 && ` (${inc.pointsDelta > 0 ? "+" : ""}${inc.pointsDelta} puntos)`}
+                </p>
+              ))}
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="ghost" onClick={() => setIncident(w.id)}>
+                  <Wrench className="h-3.5 w-3.5" /> Incidencia
+                </Button>
+                <Button
+                  size="sm" variant="ghost" className="text-red-400"
+                  onClick={() => setDayDetail(w.startedAt)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Borrar este día
+                </Button>
+              </div>
+              {incident === w.id && (
+                <WorkoutIncidentModal workout={w} open onClose={() => setIncident(null)} />
+              )}
             </div>
           </details>
         ))

@@ -62,6 +62,7 @@ model User {
 
   routines          Routine[]
   workouts          Workout[]
+  incidents         WorkoutIncident[]
   attendances       Attendance[]
   personalRecords   PersonalRecord[]
   bodyMetrics       BodyMetric[]
@@ -257,6 +258,7 @@ model Workout {
   startNotified Boolean   @default(false) // ya se avisó al grupo de que empezó
 
   exercises WorkoutExercise[]
+  incidents WorkoutIncident[]
 
   @@index([userId, startedAt])
 }
@@ -284,6 +286,26 @@ model WorkoutSet {
   completed         Boolean         @default(false)
   touched           Boolean         @default(false) // false = valor precargado de la sesión anterior
   notes             String?
+}
+
+// Incidencia: corrección de una sesión ya guardada cuando se anotó mal algún
+// valor. Guarda qué se tocó y qué se recalculó, porque una sesión corregida
+// mueve puntos y PRs y sin rastro no hay forma de explicar el ranking.
+model WorkoutIncident {
+  id          String   @id @default(cuid())
+  workoutId   String
+  workout     Workout  @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  reason      String?
+  // [{ setId, exercise, setNumber, from: {reps, weight}, to: {reps, weight} }]
+  changes     Json
+  // Puntos netos aplicados al corregir (negativo si se retiraron)
+  pointsDelta Int      @default(0)
+
+  @@index([workoutId])
+  @@index([userId, createdAt])
 }
 
 // ---------- Asistencia ----------

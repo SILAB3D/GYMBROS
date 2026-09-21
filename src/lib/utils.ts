@@ -39,3 +39,10 @@ export const POINT_LABELS: Record<string, string> = {
   GOAL_COMPLETED: "Objetivos (legado)",
   CUSTOM: "Puntos extra del admin",
 };
+
+/**
+ * Cuántos valores se pueden corregir en una incidencia sobre una sesión ya
+ * guardada. El tope es deliberado: esto arregla erratas puntuales, no reescribe
+ * un entreno entero (para eso está borrar el día).
+ */
+export const MAX_INCIDENT_CHANGES = 4;

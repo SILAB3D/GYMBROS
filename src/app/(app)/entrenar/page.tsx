@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Check, Plus, Square, Timer, Lock, LockOpen, Trash2 } from "lucide-react";
+import { Check, Plus, Square, Timer, Lock, LockOpen, Trash2, TriangleAlert } from "lucide-react";
 import { formatDistanceToNowStrict } from "date-fns";
 import { es } from "date-fns/locale";
 import { api } from "@/trpc/react";
@@ -22,8 +22,21 @@ export default function ActiveWorkoutPage() {
   const [notes, setNotes] = useState("");
   const [result, setResult] = useState<string[] | null>(null);
   const [locked, setLocked] = useState(true);
+  // Se pone a true cuando el usuario confirma que los valores raros son reales
+  const [outliersOk, setOutliersOk] = useState(false);
 
-  const invalidate = () => utils.workout.active.invalidate();
+  // Solo se pide al ir a terminar: hasta entonces los valores aún se están tocando
+  const { data: outliers, isLoading: outliersLoading } = api.workout.outliers.useQuery(
+    { workoutId: workout?.id ?? "" },
+    { enabled: finishOpen && !!workout },
+  );
+
+  // Tocar cualquier valor rehace la comprobación y retira la confirmación ya
+  // dada: lo confirmado valía para los números de entonces, no para los nuevos.
+  const invalidate = () => {
+    setOutliersOk(false);
+    return Promise.all([utils.workout.active.invalidate(), utils.workout.outliers.invalidate()]);
+  };
   const updateSet = api.workout.updateSet.useMutation({ onSuccess: invalidate });
   const addSet = api.workout.addSet.useMutation({ onSuccess: invalidate });
   const removeSet = api.workout.removeSet.useMutation({ onSuccess: invalidate });
@@ -247,32 +260,80 @@ export default function ActiveWorkoutPage() {
         </Button>
       </div>
 
-      <Modal
-        open={finishOpen}
-        onClose={() => setFinishOpen(false)}
-        title="Terminar entrenamiento"
-        footer={
-          <Button
-            size="lg"
-            className="w-full"
-            loading={finish.isLoading}
-            onClick={() => finish.mutate({ workoutId: workout.id, notes: notes || undefined })}
+      {/* Antes de guardar, si alguna serie se dispara sobre lo de siempre se
+          pregunta: es el último momento para cazar un 18 que era un 10. */}
+      {(() => {
+        const pending = (outliers ?? []).length > 0 && !outliersOk;
+        return (
+          <Modal
+            open={finishOpen}
+            onClose={() => setFinishOpen(false)}
+            title={pending ? "¿Seguro que son estos valores?" : "Terminar entrenamiento"}
+            footer={
+              pending ? (
+                <div className="flex w-full gap-2">
+                  <Button
+                    size="lg"
+                    variant="secondary"
+                    className="flex-1"
+                    onClick={() => setFinishOpen(false)}
+                  >
+                    Corregir
+                  </Button>
+                  <Button size="lg" className="flex-1" onClick={() => setOutliersOk(true)}>
+                    Sí, son correctos
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  size="lg"
+                  className="w-full"
+                  loading={finish.isLoading}
+                  disabled={outliersLoading}
+                  onClick={() => finish.mutate({ workoutId: workout.id, notes: notes || undefined })}
+                >
+                  Guardar y terminar
+                </Button>
+              )
+            }
           >
-            Guardar y terminar
-          </Button>
-        }
-      >
-        <div className="space-y-3">
-          <p className="text-sm text-muted">
-            Se guardarán las series marcadas como completadas y se detectarán tus nuevos PRs automáticamente.
-          </p>
-          <Input
-            value={notes}
-            placeholder="Comentarios (opcional)"
-            onChange={(e) => setNotes(e.target.value)}
-          />
-        </div>
-      </Modal>
+            {pending ? (
+              <div className="space-y-3">
+                <p className="flex items-start gap-2 text-sm text-muted">
+                  <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
+                  Estas series suben mucho respecto a tus últimas sesiones. Si te has colado al
+                  teclear, corrígelo ahora: luego se cuela en tus medias y en tus PRs.
+                </p>
+                {(outliers ?? []).map((o) => (
+                  <div
+                    key={o.setId}
+                    className="flex items-center justify-between rounded-xl bg-surface-2 px-3 py-2 text-sm"
+                  >
+                    <span>
+                      {o.exercise} <span className="text-muted">· serie {o.setNumber}</span>
+                    </span>
+                    <span className="shrink-0">
+                      <span className="font-semibold text-gold">{o.value} {o.unit}</span>
+                      <span className="text-muted"> (antes {o.previous})</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-muted">
+                  Se guardarán las series marcadas como completadas y se detectarán tus nuevos PRs automáticamente.
+                </p>
+                <Input
+                  value={notes}
+                  placeholder="Comentarios (opcional)"
+                  onChange={(e) => setNotes(e.target.value)}
+                />
+              </div>
+            )}
+          </Modal>
+        );
+      })()}
 
       <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Añadir ejercicio">
         {/* El propio modal limita la altura y hace scroll */}
