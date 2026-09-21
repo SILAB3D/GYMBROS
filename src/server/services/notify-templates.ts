@@ -16,7 +16,13 @@ export async function notifyGroupFromTemplate(
   await notifyOthers(db, exceptUserId, type, fillTemplate(t.title, vars), t.body ? fillTemplate(t.body, vars) : undefined, category);
 }
 
-/** Envía una notificación a un usuario concreto usando una plantilla editable. */
+/**
+ * Envía una notificación a un usuario concreto usando una plantilla editable.
+ *
+ * Con `dedupeSince` no se repite el aviso si ya salió uno con el mismo título
+ * desde esa fecha: el cron puede ejecutarse más de una vez al día sin que el
+ * usuario reciba el mismo recordatorio dos veces. Devuelve si se ha enviado.
+ */
 export async function notifyUserFromTemplate(
   db: PrismaClient,
   userId: string,
@@ -24,8 +30,18 @@ export async function notifyUserFromTemplate(
   category: NotifyCategory,
   vars: Record<string, string | number> = {},
   type: NotificationType = "SYSTEM",
+  dedupeSince?: Date,
 ) {
   const t = await db.notificationTemplate.findUnique({ where: { code } });
-  if (!t || !t.enabled) return;
-  await notify(db, userId, type, fillTemplate(t.title, vars), t.body ? fillTemplate(t.body, vars) : undefined, category);
+  if (!t || !t.enabled) return false;
+  const title = fillTemplate(t.title, vars);
+  if (dedupeSince) {
+    const already = await db.notification.findFirst({
+      where: { userId, type, title, createdAt: { gte: dedupeSince } },
+      select: { id: true },
+    });
+    if (already) return false;
+  }
+  await notify(db, userId, type, title, t.body ? fillTemplate(t.body, vars) : undefined, category);
+  return true;
 }

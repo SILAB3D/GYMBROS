@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { format, formatDistanceToNowStrict, addMonths, subMonths } from "date-fns";
 import { es } from "date-fns/locale";
-import { Flame, Trophy, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
+import { Flame, Trophy, ChevronLeft, ChevronRight, ChevronDown, Dumbbell } from "lucide-react";
 import { api } from "@/trpc/react";
 import { Card, Spinner, Avatar, Stat, Badge, Button } from "@/components/ui";
 import { MonthCalendar } from "@/components/month-calendar";
@@ -27,8 +27,18 @@ export default function PublicProfilePage() {
     <div className="space-y-6">
       <Card className="flex items-center gap-4">
         <Avatar name={data.user.name} src={data.user.avatarUrl} size={72} />
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold">{data.user.name}</h1>
+          <Badge
+            className={
+              data.user.gymName
+                ? "my-1 max-w-full bg-accent/15 text-accent"
+                : "my-1 max-w-full bg-surface-2 text-muted"
+            }
+          >
+            <Dumbbell className="h-3 w-3 shrink-0" />
+            <span className="truncate">{data.user.gymName ?? "Gimnasio sin indicar"}</span>
+          </Badge>
           <p className="text-sm text-muted">
             {data.user.gymStartDate
               ? `Entrenando desde hace ${formatDistanceToNowStrict(data.user.gymStartDate, { locale: es })}`

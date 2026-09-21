@@ -51,12 +51,8 @@ model User {
   // (legado) El apartado Gym ya no se puede ocultar desde Ajustes
   investmentEnabled Boolean @default(true)
 
-  // Gimnasio de referencia del apartado Gym. Las coordenadas solo se guardan
-  // cuando la ubicación se elige en el buscador.
-  gymName    String?
-  gymAddress String?
-  gymLat     Float?
-  gymLng     Float?
+  // Gimnasio de referencia del apartado Gym (solo el nombre)
+  gymName String?
 
   // Tutorial de bienvenida ya completado
   onboardingDone Boolean @default(false)

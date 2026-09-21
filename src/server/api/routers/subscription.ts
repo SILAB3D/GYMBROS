@@ -98,6 +98,17 @@ export const subscriptionRouter = createTRPCRouter({
       }
     }
 
+    /**
+     * Periodo en curso: el tramo pagado que contiene el día de hoy. Es la base
+     * del cálculo que se enseña en pantalla (inversión ÷ asistencias).
+     */
+    let periodFrom = start;
+    while (addMonths(periodFrom, sub.periodMonths) <= now) {
+      periodFrom = addMonths(periodFrom, sub.periodMonths);
+    }
+    const periodTo = addMonths(periodFrom, sub.periodMonths);
+    const periodSessions = attendances.filter((a) => a.date >= periodFrom && a.date < periodTo).length;
+
     return {
       sub,
       stats: {
@@ -113,6 +124,14 @@ export const subscriptionRouter = createTRPCRouter({
         totalSessions,
         costPerSessionTotal:
           totalSessions > 0 ? Math.round((totalPaid / totalSessions) * 100) / 100 : null,
+        currentPeriod: {
+          from: periodFrom,
+          to: periodTo,
+          invested: Math.round(sub.price * 100) / 100,
+          sessions: periodSessions,
+          costPerSession:
+            periodSessions > 0 ? Math.round((sub.price / periodSessions) * 100) / 100 : null,
+        },
         rows,
       },
     };

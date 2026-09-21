@@ -9,6 +9,9 @@ import { purgeExpiredDeletions } from "@/server/services/account-deletion";
 
 export const dynamic = "force-dynamic";
 
+/** Cada cuántos días seguidos sin entrenar se repite el aviso de ausencia. */
+const INACTIVE_EVERY_DAYS = 4;
+
 /**
  * Recordatorios diarios (Vercel Cron, ver vercel.json). El contenido sale de
  * plantillas editables por el admin; la categoría "reminders" se respeta por usuario.
@@ -93,17 +96,16 @@ export async function GET(req: Request) {
       }
     }
 
-    // 2) Varios días sin entrenar (máx. una vez cada 3 días)
+    // 2) Sin entrenar: un aviso por cada 4 días consecutivos (4º, 8º, 12º…)
     if (user.lastAttendanceDate) {
       const daysOff = differenceInCalendarDays(startOfDay(now), startOfDay(user.lastAttendanceDate));
-      if (daysOff >= 3) {
-        const recent = await db.notification.findFirst({
-          where: { userId: user.id, type: "SYSTEM", createdAt: { gte: new Date(Date.now() - 3 * 86400000) } },
-        });
-        if (!recent) {
-          await notifyUserFromTemplate(db, user.id, "REMINDER_INACTIVE", "reminders", { days: daysOff });
-          sent++;
-        }
+      // El anti-duplicados va por título y por día: antes bastaba cualquier
+      // aviso del sistema reciente para tragarse este, y casi nunca salía.
+      if (daysOff >= INACTIVE_EVERY_DAYS && daysOff % INACTIVE_EVERY_DAYS === 0) {
+        const done = await notifyUserFromTemplate(
+          db, user.id, "REMINDER_INACTIVE", "reminders", { days: daysOff }, "SYSTEM", startOfDay(now),
+        );
+        if (done) sent++;
       }
     }
   }

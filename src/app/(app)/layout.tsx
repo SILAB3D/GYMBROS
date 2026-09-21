@@ -5,6 +5,7 @@ import { FeedbackButton } from "@/components/feedback-button";
 import { PollGate } from "@/components/poll-gate";
 import { PushPermissionGate } from "@/components/push-permission-gate";
 import { UpdatesGate } from "@/components/updates-gate";
+import { GymNameGate } from "@/components/gym-name-gate";
 import { OnboardingTutorial } from "@/components/onboarding-tutorial";
 import { OfflineManager } from "@/components/offline-manager";
 import { PageTransition } from "@/components/page-transition";
@@ -31,6 +32,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <PollGate />
         <PushPermissionGate />
         <UpdatesGate />
+        <GymNameGate />
         <OnboardingTutorial />
         <OfflineManager />
         <AppSplash />

@@ -10,11 +10,14 @@ import { cn } from "@/lib/utils";
  * Botón flotante visible en toda la app: cualquier usuario puede enviar
  * sugerencias de mejora o reportar bugs. Los admins las ven en /admin.
  *
- * Se retira solo tras 3 segundos sin scroll, esté la página donde esté: el
- * temporizador arranca al montar y se reinicia con cualquier gesto, así que
- * también desaparece en pantallas cortas que no llegan a desplazarse.
+ * Solo asoma con la vista arriba del todo: es un extra, no parte de la
+ * pantalla, y en mitad de una lista estorbaba. Aparece al llegar arriba y se
+ * desvanece 2 segundos después; al bajar desaparece al instante.
  */
-const HIDE_AFTER_MS = 3000;
+const HIDE_AFTER_MS = 2000;
+
+/** Margen de scroll que se sigue considerando "arriba del todo". */
+const TOP_THRESHOLD_PX = 8;
 
 export function FeedbackButton() {
   const [open, setOpen] = useState(false);
@@ -23,24 +26,26 @@ export function FeedbackButton() {
   const [visible, setVisible] = useState(true);
   const hideTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  // Visible al hacer scroll; se esconde tras 3 segundos de inactividad.
-  // Se escuchan también rueda y arrastre: en una página que no desborda no hay
-  // evento "scroll", y antes el botón se quedaba clavado en pantalla.
+  // Visible solo con la vista arriba del todo; a los 2 segundos se va sola.
+  // Se escuchan rueda y arrastre además de "scroll": en una página que no
+  // desborda no hay evento de scroll y el botón se quedaba clavado.
   useEffect(() => {
-    const scheduleHide = () => {
+    const atTop = () => window.scrollY <= TOP_THRESHOLD_PX;
+    const sync = () => {
       clearTimeout(hideTimer.current);
+      if (!atTop()) {
+        setVisible(false);
+        return;
+      }
+      setVisible(true);
       hideTimer.current = setTimeout(() => setVisible(false), HIDE_AFTER_MS);
     };
-    const wake = () => {
-      setVisible(true);
-      scheduleHide();
-    };
-    scheduleHide();
-    const events = ["scroll", "wheel", "touchmove"] as const;
-    events.forEach((e) => window.addEventListener(e, wake, { passive: true }));
+    sync();
+    const events = ["scroll", "wheel", "touchmove", "resize"] as const;
+    events.forEach((e) => window.addEventListener(e, sync, { passive: true }));
     return () => {
       clearTimeout(hideTimer.current);
-      events.forEach((e) => window.removeEventListener(e, wake));
+      events.forEach((e) => window.removeEventListener(e, sync));
     };
   }, []);
 

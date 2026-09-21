@@ -188,6 +188,39 @@ export const workoutRouter = createTRPCRouter({
       });
     }),
 
+  /**
+   * Quitar una serie del entreno en curso. La última de un ejercicio no se
+   * puede borrar: un ejercicio sin series no significa nada, para eso está
+   * simplemente no completarlo.
+   */
+  removeSet: protectedProcedure
+    .input(z.object({ setId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const set = await ctx.db.workoutSet.findUnique({
+        where: { id: input.setId },
+        include: {
+          workoutExercise: {
+            include: { workout: true, sets: { orderBy: { setNumber: "asc" } } },
+          },
+        },
+      });
+      if (!set || set.workoutExercise.workout.userId !== ctx.session.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      if (set.workoutExercise.sets.length <= 1) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "El ejercicio necesita al menos una serie" });
+      }
+      await ctx.db.workoutSet.delete({ where: { id: set.id } });
+      // Las que iban detrás suben un número: la lista no deja huecos
+      const after = set.workoutExercise.sets.filter((x) => x.setNumber > set.setNumber);
+      await Promise.all(
+        after.map((x) =>
+          ctx.db.workoutSet.update({ where: { id: x.id }, data: { setNumber: x.setNumber - 1 } }),
+        ),
+      );
+      return { ok: true };
+    }),
+
   addExercise: protectedProcedure
     .input(z.object({ workoutId: z.string(), exerciseId: z.string() }))
     .mutation(async ({ ctx, input }) => {

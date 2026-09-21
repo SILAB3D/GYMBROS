@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Check, Plus, Square, Timer, Lock, LockOpen } from "lucide-react";
+import { Check, Plus, Square, Timer, Lock, LockOpen, Trash2 } from "lucide-react";
 import { formatDistanceToNowStrict } from "date-fns";
 import { es } from "date-fns/locale";
 import { api } from "@/trpc/react";
@@ -21,11 +21,12 @@ export default function ActiveWorkoutPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [notes, setNotes] = useState("");
   const [result, setResult] = useState<string[] | null>(null);
-  const [locked, setLocked] = useState(false);
+  const [locked, setLocked] = useState(true);
 
   const invalidate = () => utils.workout.active.invalidate();
   const updateSet = api.workout.updateSet.useMutation({ onSuccess: invalidate });
   const addSet = api.workout.addSet.useMutation({ onSuccess: invalidate });
+  const removeSet = api.workout.removeSet.useMutation({ onSuccess: invalidate });
   const addExercise = api.workout.addExercise.useMutation({
     onSuccess: () => {
       setAddOpen(false);
@@ -109,17 +110,25 @@ export default function ActiveWorkoutPage() {
           </p>
         </div>
         <div className="flex shrink-0 gap-1.5">
-          {/* El candado solo cierra la creación de series nuevas: los pesos,
-              las reps y el resto de la sesión se siguen tocando igual. */}
+          {/* El candado cierra la estructura del entreno —series y ejercicios—,
+              no los datos: pesos, reps y completado se siguen tocando igual.
+              Viene puesto: durante la sesión se pulsa a ciegas y era fácil
+              añadir una serie de más sin querer. */}
           <Button
             variant={locked ? "primary" : "secondary"}
             size="sm"
-            title={locked ? "Permitir añadir series" : "Bloquear la creación de series nuevas"}
+            title={locked ? "Desbloquear series y ejercicios" : "Bloquear series y ejercicios"}
             onClick={() => setLocked((v) => !v)}
           >
             {locked ? <Lock className="h-4 w-4" /> : <LockOpen className="h-4 w-4" />}
           </Button>
-          <Button variant="secondary" size="sm" title="Añadir ejercicio" onClick={() => setAddOpen(true)}>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={locked}
+            title={locked ? "Desbloquea el candado para añadir ejercicios" : "Añadir ejercicio"}
+            onClick={() => setAddOpen(true)}
+          >
             <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Ejercicio</span>
           </Button>
         </div>
@@ -142,8 +151,8 @@ export default function ActiveWorkoutPage() {
 
       {locked ? (
         <p className="flex items-center gap-1.5 text-xs text-accent">
-          <Lock className="h-3.5 w-3.5" /> Series bloqueadas: no se pueden añadir nuevas. Todo lo demás
-          se edita con normalidad.
+          <Lock className="h-3.5 w-3.5" /> Entreno bloqueado: no se añaden ni se quitan series ni
+          ejercicios. Pesos y repeticiones se editan con normalidad.
         </p>
       ) : (
         <p className="text-xs text-muted">
@@ -155,9 +164,14 @@ export default function ActiveWorkoutPage() {
       {workout.exercises.map((we) => {
         // Los ejercicios sin peso solo piden repeticiones: la columna de kg sobra
         const noWeight = we.exercise.noWeight;
+        // Con el candado abierto aparece una columna más: la papelera
         const cols = noWeight
-          ? "grid-cols-[2rem_1fr_2.5rem]"
-          : "grid-cols-[2rem_1fr_1fr_2.5rem]";
+          ? locked
+            ? "grid-cols-[2rem_1fr_2.5rem]"
+            : "grid-cols-[2rem_1fr_2.5rem_2rem]"
+          : locked
+            ? "grid-cols-[2rem_1fr_1fr_2.5rem]"
+            : "grid-cols-[2rem_1fr_1fr_2.5rem_2rem]";
         return (
         <Card key={we.id} className="space-y-2">
           <p className="font-semibold">
@@ -166,6 +180,7 @@ export default function ActiveWorkoutPage() {
           </p>
           <div className={cn("grid items-center gap-2 text-xs uppercase text-muted", cols)}>
             <span>#</span>{!noWeight && <span>Peso (kg)</span>}<span>Reps</span><span />
+            {!locked && <span />}
           </div>
           {we.sets.map((s) => (
             <div key={s.id} className={cn("grid items-center gap-2", cols)}>
@@ -193,6 +208,17 @@ export default function ActiveWorkoutPage() {
               >
                 <Check className="h-4 w-4" />
               </button>
+              {!locked && (
+                <button
+                  onClick={() => removeSet.mutate({ setId: s.id })}
+                  disabled={we.sets.length <= 1}
+                  title="Quitar esta serie"
+                  aria-label="Quitar esta serie"
+                  className="flex h-9 w-8 items-center justify-center rounded-xl text-muted transition hover:text-red-400 disabled:opacity-30"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
             </div>
           ))}
           {!locked && (
