@@ -40,7 +40,16 @@ export async function usersWithCategory(
   return users.filter((u) => categoryEnabled(u.notifyPrefs, category)).map((u) => u.id);
 }
 
-/** Rellena {placeholders} de una plantilla. */
+/**
+ * Rellena {placeholders} de una plantilla.
+ *
+ * Un comodín sin valor desaparece sin dejar rastro: si el texto queda con
+ * espacios de más (o acaba en uno), se limpia. Así una plantilla que termina
+ * en «{points}» se sigue leyendo bien cuando no hay puntos que contar.
+ */
 export function fillTemplate(text: string, vars: Record<string, string | number>): string {
-  return text.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
+  return text
+    .replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""))
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }

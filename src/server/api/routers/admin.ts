@@ -131,6 +131,10 @@ export const adminRouter = createTRPCRouter({
             routine: "💪 Push",
             days: "3",
             target: "4",
+            missing: "1",
+            streak: "3",
+            points: "+35 puntos",
+            milestone: "¡Racha de 3 semanas! 🔥",
           };
           const fill = (s: string) => s.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
           title = `[PRUEBA] ${fill(t.title)}`;

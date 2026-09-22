@@ -25,10 +25,10 @@ export const MUSCLE_LABELS: Record<string, string> = {
 export const DAY_LABELS = ["D", "L", "M", "X", "J", "V", "S"];
 
 export const POINT_LABELS: Record<string, string> = {
-  ATTENDANCE: "Asistencias",
+  ATTENDANCE: "Asistencias (legado)",
   WORKOUT_COMPLETED: "Entrenamientos",
   NEW_PR: "Nuevos PRs",
-  ROUTINE_SHARED: "Rutinas compartidas",
+  ROUTINE_SHARED: "Rutinas compartidas (legado)",
   STREAK_WEEK1: "Racha: 1.ª semana",
   STREAK_WEEK2: "Racha: 2 semanas",
   STREAK_WEEK3: "Racha: 3 semanas",
@@ -41,8 +41,8 @@ export const POINT_LABELS: Record<string, string> = {
 };
 
 /**
- * Cuántos valores se pueden corregir en una incidencia sobre una sesión ya
- * guardada. El tope es deliberado: esto arregla erratas puntuales, no reescribe
- * un entreno entero (para eso está borrar el día).
+ * Techo de series que admite una incidencia. Una incidencia puede corregir el
+ * entrenamiento entero, así que esto no es una regla de producto: solo evita
+ * peticiones absurdas (ninguna sesión tiene trescientas series).
  */
-export const MAX_INCIDENT_CHANGES = 4;
+export const MAX_INCIDENT_CHANGES = 300;

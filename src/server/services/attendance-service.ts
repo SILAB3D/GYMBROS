@@ -2,7 +2,8 @@ import type { PrismaClient, PointType } from "@prisma/client";
 import {
   startOfDay, endOfDay, addDays, startOfISOWeek, endOfISOWeek, subWeeks, isSameDay, format,
 } from "date-fns";
-import { awardPoints, addFeed, notify, checkAchievements } from "./gamification";
+import { awardPoints, addFeed, checkAchievements } from "./gamification";
+import { notifyUserFromTemplate } from "./notify-templates";
 
 /** Tipos de punto ligados a cumplir una semana de racha. */
 const STREAK_POINT_TYPES: PointType[] = [
@@ -43,9 +44,6 @@ export async function registerAttendance(
   const user = await db.user.findUniqueOrThrow({ where: { id: userId } });
   await db.user.update({ where: { id: userId }, data: { lastAttendanceDate: date } });
 
-  // Puntos por día entrenado
-  await awardPoints(db, userId, "ATTENDANCE", { date: date.toISOString() });
-
   // --- Racha semanal: se cumple la semana al alcanzar los días planificados ---
   let weekStreak: number | null = null;
   if (user.weeklyTargetDays > 0) {
@@ -82,12 +80,18 @@ export async function registerAttendance(
           },
         });
 
-        await notify(
-          db, userId, "STREAK", level.title,
-          points > 0
-            ? `+${points} puntos por cumplir tus ${user.weeklyTargetDays} días esta semana`
-            : `Has cumplido tus ${user.weeklyTargetDays} días esta semana`,
-          "streaks",
+        // Texto editable por el admin (plantilla WEEK_COMPLETED). Si la
+        // desactiva no se manda nada: para eso está el interruptor.
+        await notifyUserFromTemplate(
+          db, userId, "WEEK_COMPLETED", "streaks",
+          {
+            name: user.name,
+            milestone: level.title,
+            streak: weekStreak,
+            target: user.weeklyTargetDays,
+            points: points > 0 ? `+${points} puntos` : "",
+          },
+          "STREAK",
         );
         if (weekStreak >= 4) {
           await addFeed(db, userId, "STREAK", `${user.name} lleva ${weekStreak} semanas cumpliendo su plan 💎`);
@@ -211,7 +215,7 @@ export async function deleteTrainingDay(db: PrismaClient, userId: string, rawDat
     }),
   ]);
 
-  // Puntos de asistencia del día
+  // Puntos de asistencia del día (regla retirada: solo quedan los históricos)
   await db.pointEvent.deleteMany({
     where: { userId, type: "ATTENDANCE", meta: { path: ["date"], equals: date.toISOString() } },
   });

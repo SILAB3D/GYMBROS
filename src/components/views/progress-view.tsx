@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { ArrowUp, ArrowDown, ArrowUpDown, Info } from "lucide-react";
 import type { inferRouterOutputs } from "@trpc/server";
 import { api } from "@/trpc/react";
 import type { AppRouter } from "@/server/api/root";
-import { Card, Spinner, EmptyState } from "@/components/ui";
+import { Spinner, EmptyState, Modal } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 type Direction = "up" | "flat" | "down" | "unknown";
@@ -88,6 +88,17 @@ function TrendLabel({
   );
 }
 
+/** Una fórmula del panel de ayuda: qué se calcula y cómo. */
+function Formula({ label, expression, note }: { label: string; expression: string; note?: string }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
+      <p className="rounded-xl bg-surface-2 p-3 font-mono text-xs text-fg">{expression}</p>
+      {note && <p className="text-[11px] text-muted">{note}</p>}
+    </div>
+  );
+}
+
 /**
  * Progreso de entrenamiento: la rutina completa y, debajo, cada ejercicio.
  * Se compara la media de las 2 últimas sesiones con la de las 3 anteriores, así
@@ -96,6 +107,7 @@ function TrendLabel({
 export function ProgressView() {
   const { data: routines, isLoading } = api.stats.routineTrends.useQuery();
   const [selected, setSelected] = useState<string | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   if (isLoading) return <Spinner />;
 
@@ -115,12 +127,22 @@ export function ProgressView() {
 
   return (
     <div className="space-y-5">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-bold">Progreso</h1>
-        <p className="text-sm text-muted">
-          Media de volumen de las {RECENT_SESSIONS} últimas sesiones frente a las{" "}
-          {PREVIOUS_SESSIONS} anteriores.
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <h1 className="text-2xl font-bold">Progreso</h1>
+          <p className="text-sm text-muted">
+            Media de volumen de las {RECENT_SESSIONS} últimas sesiones frente a las{" "}
+            {PREVIOUS_SESSIONS} anteriores.
+          </p>
+        </div>
+        <button
+          onClick={() => setHelpOpen(true)}
+          aria-label="Cómo se calcula el progreso"
+          title="Cómo se calcula el progreso"
+          className="shrink-0 rounded-full border border-border bg-surface p-2 text-muted transition hover:border-accent/50 hover:text-accent"
+        >
+          <Info className="h-4 w-4" />
+        </button>
       </div>
 
       {/* Selector de rutina */}
@@ -179,15 +201,40 @@ export function ProgressView() {
         />
       )}
 
-      <Card className="py-3 text-xs text-muted">
-        El progreso compara la media de volumen de tus {RECENT_SESSIONS} últimas sesiones con la
-        media de las {PREVIOUS_SESSIONS} anteriores, así que hacen falta {MIN_SESSIONS} sesiones
-        para calcularlo. El volumen de una sesión son los kg levantados (peso × repeticiones de las
-        series completadas); en los ejercicios marcados como «sin peso» se cuentan las repeticiones
-        totales, y el de la rutina suma el de todos sus ejercicios. Por encima de +{FLAT_PCT}% la
-        flecha sube y la etiqueta es verde; por debajo de −{FLAT_PCT}% baja y se pone roja; entre
-        medias la flecha es de doble punta y la etiqueta ámbar: ahí ni subes ni bajas.
-      </Card>
+      <Modal open={helpOpen} onClose={() => setHelpOpen(false)} title="Cómo se calcula el progreso">
+        <div className="space-y-4 text-sm">
+          <Formula
+            label="Volumen de una serie"
+            expression="peso × repeticiones"
+            note="En los ejercicios «sin peso» el volumen son las repeticiones."
+          />
+          <Formula
+            label="Volumen de una sesión"
+            expression="Σ volumen de las series completadas"
+          />
+          <Formula
+            label="Volumen de la rutina"
+            expression="Σ volumen de todos sus ejercicios"
+          />
+          <Formula
+            label="Progreso"
+            expression={`Δ% = (A − B) ÷ B × 100`}
+            note={`A = media de las ${RECENT_SESSIONS} últimas sesiones · B = media de las ${PREVIOUS_SESSIONS} anteriores`}
+          />
+          <Formula
+            label="Sesiones necesarias"
+            expression={`${RECENT_SESSIONS} + ${PREVIOUS_SESSIONS} = ${MIN_SESSIONS}`}
+          />
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Etiquetas</p>
+            <div className="space-y-1 rounded-xl bg-surface-2 p-3 font-mono text-xs">
+              <p className="text-accent">Δ% &gt; +{FLAT_PCT}% → ↑ subes</p>
+              <p className="text-amber-400">−{FLAT_PCT}% ≤ Δ% ≤ +{FLAT_PCT}% → ↕ te mantienes</p>
+              <p className="text-red-400">Δ% &lt; −{FLAT_PCT}% → ↓ bajas</p>
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

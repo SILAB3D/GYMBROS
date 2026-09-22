@@ -3,7 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { MuscleGroup } from "@prisma/client";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { MAX_WORKOUT_MS } from "@/server/services/workout-service";
-import { awardPoints, addFeed, checkAchievements } from "@/server/services/gamification";
+import { addFeed, checkAchievements } from "@/server/services/gamification";
 import { syncWeeklyTarget } from "@/server/services/weekly-target";
 
 const routineExerciseInput = z.object({
@@ -229,7 +229,6 @@ export const routineRouter = createTRPCRouter({
       data: { isShared: !routine.isShared },
     });
     if (updated.isShared && !routine.isShared) {
-      await awardPoints(ctx.db, ctx.session.user.id, "ROUTINE_SHARED", { routineId: routine.id });
       const user = await ctx.db.user.findUnique({ where: { id: ctx.session.user.id }, select: { name: true } });
       await addFeed(ctx.db, ctx.session.user.id, "ROUTINE_SHARED", `${user?.name} compartió la rutina ${updated.emoji} ${updated.name}`);
       await checkAchievements(ctx.db, ctx.session.user.id);

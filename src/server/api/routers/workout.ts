@@ -348,9 +348,11 @@ export const workoutRouter = createTRPCRouter({
     }),
 
   /**
-   * Incidencia sobre una sesión ya guardada: corrige hasta cuatro valores mal
-   * anotados y rehace lo que aquellos números provocaron (totales, PRs
-   * automáticos y sus puntos). Ver workout-incident-service.
+   * Incidencia sobre una sesión ya guardada: corrige los valores mal anotados
+   * —la sesión entera si hace falta—, marca las series que se hicieron y se
+   * quedaron sin apuntar, añade las que faltaban y rehace lo que aquellos
+   * números provocaron (totales, PRs automáticos y sus puntos). Solo se admite
+   * UNA incidencia por sesión. Ver workout-incident-service.
    */
   reportIncident: protectedProcedure
     .input(
@@ -363,19 +365,44 @@ export const workoutRouter = createTRPCRouter({
               setId: z.string(),
               reps: z.number().int().min(0).max(200).optional(),
               weight: z.number().min(0).max(1000).optional(),
+              completed: z.boolean().optional(),
             }),
           )
-          .min(1)
-          .max(MAX_INCIDENT_CHANGES),
+          .max(MAX_INCIDENT_CHANGES) // techo de seguridad, no regla de producto
+          .default([]),
+        // Series que no se llegaron a apuntar en la sesión
+        additions: z
+          .array(
+            z.object({
+              workoutExerciseId: z.string(),
+              reps: z.number().int().min(0).max(200),
+              weight: z.number().min(0).max(1000).optional(),
+              completed: z.boolean().optional(),
+            }),
+          )
+          .max(MAX_INCIDENT_CHANGES)
+          .default([]),
+      }).refine((v) => v.changes.length + v.additions.length > 0, {
+        message: "No hay nada que corregir",
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const already = await ctx.db.workoutIncident.count({
+        where: { workoutId: input.workoutId, userId: ctx.session.user.id },
+      });
+      if (already > 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Esta sesión ya se corrigió: solo se admite una incidencia por entrenamiento.",
+        });
+      }
       const result = await applyWorkoutIncident(
         ctx.db,
         ctx.session.user.id,
         input.workoutId,
         input.changes,
         input.reason,
+        input.additions,
       );
       if (!result) throw new TRPCError({ code: "FORBIDDEN" });
       return result;

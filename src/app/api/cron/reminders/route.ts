@@ -83,16 +83,15 @@ export async function GET(req: Request) {
 
       const remaining = user.weeklyTargetDays - weekCount;
       if (remaining === 1) {
-        const already = await db.notification.findFirst({
-          where: { userId: user.id, type: "SYSTEM", title: { contains: "semana" }, createdAt: { gte: weekStart } },
-        });
-        if (!already) {
-          await notifyUserFromTemplate(db, user.id, "REMINDER_WEEK_LEFT", "reminders", {
-            count: weekCount,
-            target: user.weeklyTargetDays,
-          });
-          sent++;
-        }
+        // Uno por semana: el antiduplicados compara con el título ya enviado,
+        // así que sigue valiendo aunque el admin cambie el texto.
+        const done = await notifyUserFromTemplate(
+          db, user.id, "REMINDER_WEEK_LEFT", "reminders",
+          { count: weekCount, target: user.weeklyTargetDays, missing: remaining },
+          "SYSTEM",
+          weekStart,
+        );
+        if (done) sent++;
       }
     }
 

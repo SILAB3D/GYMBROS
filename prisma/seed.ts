@@ -51,10 +51,8 @@ const NO_WEIGHT: string[] = [
 ];
 
 const POINT_RULES: Array<{ type: PointType; name: string; points: number }> = [
-  { type: "ATTENDANCE", name: "Ir al gimnasio", points: 10 },
   { type: "WORKOUT_COMPLETED", name: "Completar rutina", points: 15 },
   { type: "NEW_PR", name: "Nuevo PR", points: 30 },
-  { type: "ROUTINE_SHARED", name: "Compartir rutina", points: 10 },
   { type: "STREAK_WEEK1", name: "Racha: 1 semana cumplida", points: 15 },
   { type: "STREAK_WEEK2", name: "Racha: 2 semanas seguidas", points: 25 },
   { type: "STREAK_WEEK3", name: "Racha: 3 semanas seguidas", points: 35 },
@@ -86,13 +84,19 @@ const NOTIFICATION_TEMPLATES: Array<{ code: string; title: string; body: string 
   { code: "REMINDER_INACTIVE", title: "Te echamos de menos 😴", body: "Hace días que no entrenas. ¡Hoy es buen día para volver!" },
   { code: "FRIEND_WORKOUT_START", title: "{name} está entrenando 🏋️", body: "Ha empezado {routine}." },
   { code: "FRIEND_PR", title: "¡{name} ha hecho {count} PR! 🎉", body: "Acaba de superar su récord en {exercises}." },
-  { code: "WEEK_COMPLETED", title: "¡Semana completada! ✅", body: "Has cumplido todos tus entrenos planificados." },
+  { code: "WEEK_COMPLETED", title: "{milestone}", body: "Has cumplido tus {target} días esta semana. {points}" },
 ];
 
 async function main() {
-  // Retirar reglas de puntos legadas
+  // Retirar reglas de puntos legadas. "Ir al gimnasio" y "Compartir rutina"
+  // salieron del sistema: los puntos ya otorgados se conservan, pero la regla
+  // desaparece del panel de admin y no vuelve a dar puntos.
   await prisma.pointRule.deleteMany({
-    where: { type: { in: ["STREAK_7", "WEEKLY_TARGET", "GOAL_COMPLETED"] } },
+    where: {
+      type: {
+        in: ["STREAK_7", "WEEKLY_TARGET", "GOAL_COMPLETED", "ATTENDANCE", "ROUTINE_SHARED"],
+      },
+    },
   });
 
   for (const [name, muscleGroup] of CATALOG) {
@@ -123,6 +127,8 @@ async function main() {
   const LEGACY_TITLES: Record<string, string[]> = {
     FRIEND_PR: ["¡Nuevo PR en el grupo! 🎉"],
     FRIEND_WORKOUT_START: ["¡Alguien está entrenando! 🏋️"],
+    // Texto fijo anterior: no decía ni la racha ni los puntos
+    WEEK_COMPLETED: ["¡Semana completada! ✅"],
   };
   for (const t of NOTIFICATION_TEMPLATES) {
     const existing = await prisma.notificationTemplate.findUnique({ where: { code: t.code } });

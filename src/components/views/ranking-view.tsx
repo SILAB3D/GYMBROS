@@ -17,11 +17,11 @@ const PERIODS = [
 ] as const;
 
 const POINT_LABELS: Record<string, string> = {
-  ATTENDANCE: "Asistencias",
+  ATTENDANCE: "Asistencias (legado)",
   WORKOUT_COMPLETED: "Entrenamientos",
   NEW_PR: "Nuevos PRs",
   STREAK_7: "Rachas de 7 días",
-  ROUTINE_SHARED: "Rutinas compartidas",
+  ROUTINE_SHARED: "Rutinas compartidas (legado)",
   STREAK_WEEK1: "Racha: 1.ª semana",
   STREAK_WEEK2: "Racha: 2 semanas",
   STREAK_WEEK3: "Racha: 3 semanas",

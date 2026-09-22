@@ -5,6 +5,86 @@ import { registerAttendance } from "./attendance-service";
 /** Tiempo máximo de una sesión: si se supera, se cierra sola. */
 export const MAX_WORKOUT_MS = 3 * 60 * 60 * 1000; // 3 horas
 
+export type FinishedWorkout = {
+  userId: string;
+  routineId: string | null;
+  exercises: Array<{
+    exerciseId: string;
+    exercise: { noWeight: boolean };
+    sets: Array<{ reps: number; weight: number; completed: boolean }>;
+  }>;
+};
+
+/**
+ * Vuelca en la rutina lo que se ha anotado a mano en la sesión: series, reps y
+ * peso objetivo de cada ejercicio. Así «Mi plan de entrenamiento» refleja
+ * siempre lo último que se hizo de verdad y no lo que se planificó el día que
+ * se creó la rutina.
+ *
+ * Criterios:
+ * - Solo cuenta la sesión si el ejercicio tiene alguna serie completada: no
+ *   marcar una serie es saltársela, no rebajar el plan.
+ * - Las series del plan pasan a ser las de la sesión (añadir o quitar series en
+ *   el entreno es una decisión explícita del usuario).
+ * - Un ejercicio añadido sobre la marcha se suma al final de la rutina.
+ * - Una rutina compartida por otro no se toca nunca: no es del usuario.
+ */
+export async function syncRoutineFromWorkout(
+  db: PrismaClient,
+  workout: FinishedWorkout,
+): Promise<void> {
+  if (!workout.routineId) return;
+  const routine = await db.routine.findUnique({
+    where: { id: workout.routineId },
+    include: { exercises: true },
+  });
+  if (!routine || routine.userId !== workout.userId) return;
+
+  const planned = new Map(routine.exercises.map((re) => [re.exerciseId, re]));
+  let lastOrder = routine.exercises.reduce((max, re) => Math.max(max, re.order), -1);
+
+  for (const we of workout.exercises) {
+    const done = we.sets.filter((s) => s.completed);
+    if (done.length === 0) continue;
+
+    const reps = Math.max(1, Math.round(done.reduce((acc, s) => acc + s.reps, 0) / done.length));
+    const withWeight = done.filter((s) => s.weight > 0);
+    const avgWeight =
+      withWeight.length > 0
+        ? Math.round((withWeight.reduce((acc, s) => acc + s.weight, 0) / withWeight.length) * 10) / 10
+        : null;
+    const sets = Math.max(1, we.sets.length);
+    const existing = planned.get(we.exerciseId);
+
+    if (existing) {
+      const targetWeight = we.exercise.noWeight ? null : avgWeight ?? existing.targetWeight;
+      if (
+        existing.sets === sets &&
+        existing.reps === reps &&
+        existing.targetWeight === targetWeight
+      ) {
+        continue; // nada que cambiar
+      }
+      await db.routineExercise.update({
+        where: { id: existing.id },
+        data: { sets, reps, targetWeight },
+      });
+    } else {
+      lastOrder += 1;
+      await db.routineExercise.create({
+        data: {
+          routineId: routine.id,
+          exerciseId: we.exerciseId,
+          order: lastOrder,
+          sets,
+          reps,
+          targetWeight: we.exercise.noWeight ? null : avgWeight,
+        },
+      });
+    }
+  }
+}
+
 /**
  * Finaliza un entrenamiento: calcula totales, detecta PRs, otorga puntos.
  * Usado por el botón "Finalizar" y por el autocierre a las 3 horas.
@@ -45,6 +125,9 @@ export async function finishWorkout(
     where: { id: workout.id },
     data: { endedAt, totalVolume, totalSets, totalReps, notes: opts.notes },
   });
+
+  // La rutina se pone al día con lo que se acaba de anotar a mano
+  await syncRoutineFromWorkout(db, workout);
 
   const user = await db.user.findUniqueOrThrow({ where: { id: userId }, select: { name: true } });
 

@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Trophy, Users, MessageCircle, CalendarDays } from "lucide-react";
+import { Trophy, Users, CalendarDays } from "lucide-react";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
 import { RankingView } from "@/components/views/ranking-view";
@@ -14,7 +14,6 @@ const TABS = [
   { key: "ranking", label: "Ranking", icon: Trophy },
   { key: "grupo", label: "Grupo", icon: Users },
   { key: "calendario", label: "Calendario", icon: CalendarDays },
-  { key: "chat", label: "Chat", icon: MessageCircle },
 ] as const;
 
 function CommunityContent() {
@@ -56,7 +55,8 @@ function CommunityContent() {
       {visited.has("ranking") && <div className={tab === "ranking" ? "" : "hidden"}><RankingView /></div>}
       {visited.has("grupo") && <div className={tab === "grupo" ? "" : "hidden"}><GroupView /></div>}
       {visited.has("calendario") && <div className={tab === "calendario" ? "" : "hidden"}><CommunityCalendarView /></div>}
-      {/* El chat se monta solo cuando está activo (su sondeo marca mensajes como leídos) */}
+      {/* El chat ya no tiene pestaña: se entra desde el icono de la cabecera.
+          Se monta solo cuando está activo (su sondeo marca mensajes como leídos). */}
       {tab === "chat" && <ChatView />}
     </div>
   );

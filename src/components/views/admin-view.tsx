@@ -509,13 +509,18 @@ export function AdminView() {
       <AdminSection icon={<MailPlus className="h-4 w-4" />} title="Plantillas de notificación">
         <div className="space-y-1">
           <p className="text-xs text-muted">
-            Los disparadores son fijos; puedes editar el texto o desactivarlos. Comodines disponibles:{" "}
+            Los disparadores son fijos; puedes editar el texto o desactivarlos. Un comodín sin
+            valor desaparece del mensaje. Comodines disponibles:{" "}
             <code className="text-accent">{"{name}"}</code> (protagonista),{" "}
             <code className="text-accent">{"{count}"}</code>,{" "}
             <code className="text-accent">{"{exercises}"}</code>,{" "}
             <code className="text-accent">{"{routine}"}</code>,{" "}
             <code className="text-accent">{"{days}"}</code>,{" "}
-            <code className="text-accent">{"{target}"}</code>.
+            <code className="text-accent">{"{target}"}</code>,{" "}
+            <code className="text-accent">{"{missing}"}</code>,{" "}
+            <code className="text-accent">{"{streak}"}</code>,{" "}
+            <code className="text-accent">{"{points}"}</code> (p. ej. «+35 puntos») y{" "}
+            <code className="text-accent">{"{milestone}"}</code> (el hito de racha de la semana).
           </p>
         </div>
         <div className="space-y-3">

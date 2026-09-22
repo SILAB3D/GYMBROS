@@ -104,7 +104,18 @@ export function WorkoutHistoryView() {
                 </p>
               ))}
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="ghost" onClick={() => setIncident(w.id)}>
+                {/* Una incidencia por sesión: si ya la usó, el botón se apaga */}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={w.incidents.length > 0}
+                  title={
+                    w.incidents.length > 0
+                      ? "Esta sesión ya se corrigió: solo se admite una incidencia"
+                      : "Corregir lo que se anotó mal en esta sesión"
+                  }
+                  onClick={() => setIncident(w.id)}
+                >
                   <Wrench className="h-3.5 w-3.5" /> Incidencia
                 </Button>
                 <Button
