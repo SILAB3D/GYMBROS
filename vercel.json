@@ -1,6 +1,7 @@
 {
   "regions": ["dub1"],
   "crons": [
-    { "path": "/api/cron/reminders", "schedule": "0 17 * * *" }
+    { "path": "/api/cron/reminders", "schedule": "0 17 * * *" },
+    { "path": "/api/cron/weekly-streaks", "schedule": "0 7 * * 1" }
   ]
 }

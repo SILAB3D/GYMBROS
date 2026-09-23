@@ -21,6 +21,8 @@ export default function ActiveWorkoutPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [notes, setNotes] = useState("");
   const [result, setResult] = useState<string[] | null>(null);
+  // Puntos del entreno (van por serie, así que cambian de una sesión a otra)
+  const [earned, setEarned] = useState(0);
   const [locked, setLocked] = useState(true);
   // Se pone a true cuando el usuario confirma que los valores raros son reales
   const [outliersOk, setOutliersOk] = useState(false);
@@ -57,6 +59,7 @@ export default function ActiveWorkoutPage() {
       utils.invalidate();
       setFinishOpen(false);
       setResult(res.newPRs);
+      setEarned(res.workoutPoints);
     },
   });
 
@@ -74,9 +77,9 @@ export default function ActiveWorkoutPage() {
               <p key={pr} className="text-accent">🏆 {pr}</p>
             ))}
           </div>
-        ) : (
-          <p className="text-muted">+15 puntos para el ranking</p>
-        )}
+        ) : earned > 0 ? (
+          <p className="text-muted">+{earned} {earned === 1 ? "punto" : "puntos"} para el ranking</p>
+        ) : null}
         <Link href="/panel">
           <Button size="lg">Volver a inicio</Button>
         </Link>

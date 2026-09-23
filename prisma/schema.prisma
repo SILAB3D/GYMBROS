@@ -35,6 +35,9 @@ model User {
   lastCompletedWeek  DateTime? // lunes (ISO) de la última semana cumplida
   lastAttendanceDate DateTime?
 
+  // Último latido de la app abierta (para avisar de entrenos olvidados)
+  lastSeenAt DateTime?
+
   // Semanas (lunes ISO) en las que ya se avisó de racha en peligro / perdida,
   // para no repetir el aviso cada día.
   streakWarnedWeek DateTime?
@@ -244,18 +247,19 @@ model RoutineExercise {
 // ---------- Entrenamientos ----------
 
 model Workout {
-  id            String    @id @default(cuid())
-  userId        String
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  routineId     String?
-  routine       Routine?  @relation(fields: [routineId], references: [id], onDelete: SetNull)
-  startedAt     DateTime  @default(now())
-  endedAt       DateTime?
-  totalVolume   Float     @default(0) // kg totales levantados
-  totalSets     Int       @default(0)
-  totalReps     Int       @default(0)
-  notes         String?
-  startNotified Boolean   @default(false) // ya se avisó al grupo de que empezó
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  routineId      String?
+  routine        Routine?  @relation(fields: [routineId], references: [id], onDelete: SetNull)
+  startedAt      DateTime  @default(now())
+  endedAt        DateTime?
+  totalVolume    Float     @default(0) // kg totales levantados
+  totalSets      Int       @default(0)
+  totalReps      Int       @default(0)
+  notes          String?
+  startNotified  Boolean   @default(false) // ya se avisó al grupo de que empezó
+  idleNotifiedAt DateTime? // último aviso de "entreno activo y app sin abrir"
 
   exercises WorkoutExercise[]
   incidents WorkoutIncident[]

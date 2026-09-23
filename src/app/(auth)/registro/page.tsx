@@ -25,7 +25,7 @@ export default function RegisterPage() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("join");
   const [form, setForm] = useState({
-    name: "", email: "", password: "", gymStartDate: "",
+    name: "", email: "", password: "", gymStartDate: "", gymName: "",
     groupCode: "", groupName: "", masterKey: "",
   });
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +80,7 @@ export default function RegisterPage() {
             email: form.email,
             password: form.password,
             gymStartDate: form.gymStartDate ? new Date(form.gymStartDate) : undefined,
+            gymName: form.gymName.trim() || undefined,
             group:
               mode === "create"
                 ? {
@@ -139,6 +140,12 @@ export default function RegisterPage() {
         <div>
           <Label htmlFor="gymStartDate">¿Desde cuándo entrenas? (opcional)</Label>
           <Input id="gymStartDate" type="date" value={form.gymStartDate} onChange={set("gymStartDate")} />
+        </div>
+        <div>
+          <Label htmlFor="gymName">Nombre de tu gimnasio (opcional)</Label>
+          <Input id="gymName" maxLength={80} placeholder="Ej: Basic-Fit Centro"
+            value={form.gymName} onChange={set("gymName")} />
+          <p className="mt-1 text-xs text-muted">Sale en tu panel y en tu hoja de Gym. Se cambia cuando quieras.</p>
         </div>
         {error && <p className="text-sm text-red-400">{error}</p>}
         <Button type="submit" loading={register.isLoading} className="w-full" size="lg">

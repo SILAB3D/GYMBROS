@@ -34,6 +34,7 @@ export const userRouter = createTRPCRouter({
         email: z.string().email(),
         password: z.string().min(8),
         gymStartDate: z.date().optional(),
+        gymName: z.string().trim().max(80).optional(),
         group: z.discriminatedUnion("mode", [
           z.object({
             mode: z.literal("join"),
@@ -61,6 +62,8 @@ export const userRouter = createTRPCRouter({
           name: input.name.trim(),
           passwordHash: await hash(input.password, 12),
           gymStartDate: input.gymStartDate,
+          // Alimenta la etiqueta del panel y la hoja de Gym desde el primer día
+          gymName: input.gymName || null,
           role: isFirst ? "ADMIN" : "USER", // el primer usuario es admin
         },
       });
@@ -124,6 +127,16 @@ export const userRouter = createTRPCRouter({
         select: { gymName: true },
       }),
     ),
+
+  /** Latido de la app abierta: sirve para saber si un entreno activo se olvidó. */
+  ping: protectedProcedure.mutation(async ({ ctx }) => {
+    await ctx.db.user.update({
+      where: { id: ctx.session.user.id },
+      data: { lastSeenAt: new Date() },
+      select: { id: true },
+    });
+    return { ok: true };
+  }),
 
   completeOnboarding: protectedProcedure.mutation(({ ctx }) =>
     ctx.db.user.update({

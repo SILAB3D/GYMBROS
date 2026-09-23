@@ -12,6 +12,7 @@ import { PageTransition } from "@/components/page-transition";
 import { AppSplash } from "@/components/app-splash";
 import { RestTimerProvider } from "@/components/rest-timer-provider";
 import { FloatingDock } from "@/components/floating-dock";
+import { PresencePing } from "@/components/presence-ping";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerAuthSession();
@@ -35,6 +36,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <GymNameGate />
         <OnboardingTutorial />
         <OfflineManager />
+        <PresencePing />
         <AppSplash />
         <BottomNav />
       </div>

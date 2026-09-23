@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import { awardPoints, addFeed, notify, checkAchievements } from "./gamification";
+import { awardPoints, addFeed, notify, checkAchievements, workoutPointUnits } from "./gamification";
 import { registerAttendance } from "./attendance-service";
 
 /** Tiempo máximo de una sesión: si se supera, se cierra sola. */
@@ -93,7 +93,7 @@ export async function finishWorkout(
   db: PrismaClient,
   workoutId: string,
   opts: { notes?: string; auto?: boolean } = {},
-): Promise<{ workoutId: string; newPRs: string[] }> {
+): Promise<{ workoutId: string; newPRs: string[]; workoutPoints: number }> {
   const workout = await db.workout.findUnique({
     where: { id: workoutId },
     include: {
@@ -101,7 +101,7 @@ export async function finishWorkout(
       exercises: { include: { exercise: true, sets: true } },
     },
   });
-  if (!workout || workout.endedAt) return { workoutId, newPRs: [] };
+  if (!workout || workout.endedAt) return { workoutId, newPRs: [], workoutPoints: 0 };
 
   const userId = workout.userId;
   let totalVolume = 0;
@@ -203,8 +203,9 @@ export async function finishWorkout(
     }, "FRIEND_PR");
   }
 
-  await Promise.all([
-    awardPoints(db, userId, "WORKOUT_COMPLETED", { workoutId: workout.id }),
+  const [workoutPoints] = await Promise.all([
+    // 1 punto (valor de la regla) por serie completada
+    awardPoints(db, userId, "WORKOUT_COMPLETED", { workoutId: workout.id }, workoutPointUnits(workout.exercises)),
     // El volumen levantado es privado: no se publica en el feed
     addFeed(db, userId, "WORKOUT", `${user.name} completó ${workout.routine ? `la rutina ${workout.routine.emoji} ${workout.routine.name}` : "un entrenamiento"} ✅`),
   ]);
@@ -235,7 +236,7 @@ export async function finishWorkout(
     }
   }
 
-  return { workoutId: workout.id, newPRs };
+  return { workoutId: workout.id, newPRs, workoutPoints };
 }
 
 /** Cierra los entrenamientos del usuario que lleven más de 3 horas abiertos. */
@@ -268,4 +269,56 @@ export async function notifyWorkoutStartedIfDue(db: PrismaClient, userId: string
     name: user.name,
     routine: workout.routine ? `${workout.routine.emoji} ${workout.routine.name}` : "un entrenamiento",
   });
+}
+
+/** Tiempo sin abrir la app con un entreno en marcha antes de avisar. */
+export const IDLE_WORKOUT_MS = 30 * 60 * 1000; // 30 minutos
+
+/**
+ * Avisa a quien tiene un entreno activo y lleva más de 30 minutos sin abrir la
+ * app (probablemente se le olvidó darle a Finalizar, o se le fue la cabeza con
+ * el móvil guardado). Un aviso por cada ausencia: si vuelve a la app y se
+ * vuelve a ir, puede recibir otro.
+ */
+export async function notifyIdleWorkouts(db: PrismaClient, now: Date = new Date()): Promise<number> {
+  const idleSince = new Date(now.getTime() - IDLE_WORKOUT_MS);
+  const workouts = await db.workout.findMany({
+    where: {
+      endedAt: null,
+      // Los de más de 3 horas se cierran solos: ahí ya no hay nada que avisar
+      startedAt: { lt: idleSince, gt: new Date(now.getTime() - MAX_WORKOUT_MS) },
+      user: { deletionRequestedAt: null },
+    },
+    select: {
+      id: true,
+      startedAt: true,
+      idleNotifiedAt: true,
+      userId: true,
+      user: { select: { lastSeenAt: true, notifyPrefs: true } },
+      routine: { select: { name: true, emoji: true } },
+    },
+  });
+
+  const { categoryEnabled } = await import("./notify-prefs");
+  const { sendPushToUsers } = await import("./push");
+  let sent = 0;
+  for (const w of workouts) {
+    // Última señal de vida: el latido de la app o, si no hay, el inicio del entreno
+    const lastSeen = [w.user.lastSeenAt, w.startedAt]
+      .filter((d): d is Date => Boolean(d))
+      .reduce((a, b) => (a > b ? a : b));
+    if (lastSeen > idleSince) continue;
+    // Ya se avisó de esta ausencia (no ha vuelto a abrir la app desde entonces)
+    if (w.idleNotifiedAt && w.idleNotifiedAt >= lastSeen) continue;
+
+    await db.workout.update({ where: { id: w.id }, data: { idleNotifiedAt: now } });
+    if (!categoryEnabled(w.user.notifyPrefs, "reminders")) continue;
+
+    const title = "Tienes un entreno en marcha ⏱️";
+    const body = `${w.routine ? `${w.routine.emoji} ${w.routine.name} sigue abierto` : "Tu entreno sigue abierto"} y llevas más de 30 minutos sin entrar. Entra para seguir apuntando o darle a Finalizar.`;
+    await db.notification.create({ data: { userId: w.userId, type: "SYSTEM", title, body } });
+    await sendPushToUsers(db, [w.userId], { title, body, url: "/entrenar" });
+    sent++;
+  }
+  return sent;
 }

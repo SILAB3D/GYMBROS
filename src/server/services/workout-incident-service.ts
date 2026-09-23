@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { startOfDay, addDays } from "date-fns";
-import { awardPoints } from "./gamification";
+import { awardPoints, workoutPointUnits } from "./gamification";
 import { syncRoutineFromWorkout } from "./workout-service";
 import { MAX_INCIDENT_CHANGES } from "@/lib/utils";
 
@@ -259,6 +259,28 @@ export async function applyWorkoutIncident(
   });
 
   let pointsDelta = 0;
+
+  // Los puntos del entreno van por serie: se rehacen con las series corregidas
+  const oldWorkoutPoints = await db.pointEvent.findMany({
+    where: { userId, type: "WORKOUT_COMPLETED", meta: { path: ["workoutId"], equals: workoutId } },
+    select: { id: true, points: true, date: true },
+  });
+  if (oldWorkoutPoints.length > 0) {
+    await db.pointEvent.deleteMany({ where: { id: { in: oldWorkoutPoints.map((e) => e.id) } } });
+    pointsDelta -= oldWorkoutPoints.reduce((acc, e) => acc + e.points, 0);
+    const awarded = await awardPoints(
+      db, userId, "WORKOUT_COMPLETED", { workoutId }, workoutPointUnits(fresh),
+    );
+    // Conserva la fecha original para que no salte de semana ni de temporada
+    if (awarded > 0) {
+      await db.pointEvent.updateMany({
+        where: { userId, type: "WORKOUT_COMPLETED", meta: { path: ["workoutId"], equals: workoutId } },
+        data: { date: oldWorkoutPoints[0]!.date },
+      });
+    }
+    pointsDelta += awarded;
+  }
+
   const newPRs: string[] = [];
   let removedPRs = 0;
   for (const exerciseId of Array.from(touchedExercises)) {

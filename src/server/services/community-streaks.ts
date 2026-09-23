@@ -1,0 +1,78 @@
+import type { PrismaClient } from "@prisma/client";
+import { startOfISOWeek, subWeeks } from "date-fns";
+import { usersWithCategory } from "./notify-prefs";
+import { sendPushToUsers } from "./push";
+
+export const COMMUNITY_STREAKS_TITLE = "Despancetizados de la semana";
+
+/** "Ana", "Ana y Luis", "Ana, Luis y Marta" */
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} y ${names[names.length - 1]}`;
+}
+
+/**
+ * Aviso de los lunes por la mañana: quién cumplió la semana que acaba de
+ * terminar (racha de 1, 2, 3, 4 o más semanas).
+ *
+ * Cada persona recibe los nombres de SU gente —los que comparten algún grupo
+ * con ella, ella incluida—, en un único aviso aunque esté en varios grupos.
+ * Si nadie de su entorno cumplió, no se le manda nada.
+ */
+export async function notifyCommunityStreaks(db: PrismaClient, now: Date = new Date()) {
+  const weekStart = startOfISOWeek(now);
+  const lastWeek = subWeeks(weekStart, 1);
+
+  // Cumplió la semana pasada: su última semana cumplida es justo esa
+  const achievers = await db.user.findMany({
+    where: {
+      deletionRequestedAt: null,
+      currentStreak: { gte: 1 },
+      lastCompletedWeek: { gte: lastWeek, lt: weekStart },
+    },
+    select: { id: true, name: true, memberships: { select: { groupId: true } } },
+    orderBy: { currentStreak: "desc" },
+  });
+  if (achievers.length === 0) return { recipients: 0, achievers: 0 };
+
+  const achieverGroups = achievers.map((a) => ({
+    name: a.name,
+    groups: new Set(a.memberships.map((m) => m.groupId)),
+  }));
+  const groupIds = Array.from(new Set(achievers.flatMap((a) => a.memberships.map((m) => m.groupId))));
+
+  const members = await db.groupMember.findMany({
+    where: { groupId: { in: groupIds }, user: { deletionRequestedAt: null } },
+    select: { userId: true, groupId: true },
+  });
+  const groupsByUser = new Map<string, Set<string>>();
+  for (const m of members) {
+    if (!groupsByUser.has(m.userId)) groupsByUser.set(m.userId, new Set());
+    groupsByUser.get(m.userId)!.add(m.groupId);
+  }
+
+  const recipients = await usersWithCategory(db, Array.from(groupsByUser.keys()), "streaks");
+  // Un solo aviso por semana aunque el cron se repita
+  const already = await db.notification.findMany({
+    where: { userId: { in: recipients }, title: COMMUNITY_STREAKS_TITLE, createdAt: { gte: weekStart } },
+    select: { userId: true },
+  });
+  const done = new Set(already.map((n) => n.userId));
+
+  let sent = 0;
+  for (const userId of recipients) {
+    if (done.has(userId)) continue;
+    const mine = groupsByUser.get(userId)!;
+    const names = achieverGroups
+      .filter((a) => Array.from(a.groups).some((g) => mine.has(g)))
+      .map((a) => a.name);
+    if (names.length === 0) continue;
+    const body = `¡${joinNames(names)} ${names.length === 1 ? "ha" : "han"} obtenido una racha!`;
+    await db.notification.create({
+      data: { userId, type: "STREAK", title: COMMUNITY_STREAKS_TITLE, body },
+    });
+    await sendPushToUsers(db, [userId], { title: COMMUNITY_STREAKS_TITLE, body, url: "/ranking" });
+    sent++;
+  }
+  return { recipients: sent, achievers: achievers.length };
+}

@@ -51,8 +51,9 @@ const NO_WEIGHT: string[] = [
 ];
 
 const POINT_RULES: Array<{ type: PointType; name: string; points: number }> = [
-  { type: "WORKOUT_COMPLETED", name: "Completar rutina", points: 15 },
-  { type: "NEW_PR", name: "Nuevo PR", points: 30 },
+  // Por serie completada (si no se marcó ninguna, por serie de la sesión)
+  { type: "WORKOUT_COMPLETED", name: "Completar rutina (por serie)", points: 1 },
+  { type: "NEW_PR", name: "Nuevo PR", points: 15 },
   { type: "STREAK_WEEK1", name: "Racha: 1 semana cumplida", points: 15 },
   { type: "STREAK_WEEK2", name: "Racha: 2 semanas seguidas", points: 25 },
   { type: "STREAK_WEEK3", name: "Racha: 3 semanas seguidas", points: 35 },
@@ -109,6 +110,13 @@ async function main() {
       await prisma.exercise.update({ where: { id: existing.id }, data: { noWeight: true } });
     }
   }
+  // "Completar rutina" pasó de puntos fijos a puntos por serie: la regla antigua
+  // (15 fijos) se convierte una sola vez; después manda lo que ponga el admin.
+  await prisma.pointRule.updateMany({
+    where: { type: "WORKOUT_COMPLETED", name: "Completar rutina" },
+    data: { name: "Completar rutina (por serie)", points: 1 },
+  });
+
   for (const rule of POINT_RULES) {
     await prisma.pointRule.upsert({
       where: { type: rule.type },

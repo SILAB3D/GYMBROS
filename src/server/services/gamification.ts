@@ -8,18 +8,35 @@ import { categoryEnabled, usersWithCategory, type NotifyCategory } from "./notif
  * de puntuación sea configurable desde la tabla PointsConfig.
  */
 
+/**
+ * Otorga los puntos de una regla. `units` multiplica el valor de la regla para
+ * las que puntúan por cantidad (p. ej. "Completar rutina" va por serie).
+ */
 export async function awardPoints(
   db: PrismaClient,
   userId: string,
   type: PointType,
   meta?: Record<string, unknown>,
+  units = 1,
 ) {
   const rule = await db.pointRule.findUnique({ where: { type } });
-  if (!rule || !rule.enabled || rule.points <= 0) return 0;
+  if (!rule || !rule.enabled || rule.points <= 0 || units <= 0) return 0;
+  const points = rule.points * units;
   await db.pointEvent.create({
-    data: { userId, type, points: rule.points, meta: meta as object | undefined },
+    data: { userId, type, points, meta: meta as object | undefined },
   });
-  return rule.points;
+  return points;
+}
+
+/**
+ * Series que puntúan al completar un entreno: las marcadas como completadas.
+ * Si no se marcó ninguna, se cuentan todas las de la sesión (se asume que se
+ * hicieron y no se fueron marcando).
+ */
+export function workoutPointUnits(exercises: Array<{ sets: Array<{ completed: boolean }> }>): number {
+  const all = exercises.flatMap((we) => we.sets);
+  const done = all.filter((s) => s.completed).length;
+  return done > 0 ? done : all.length;
 }
 
 export async function notify(
