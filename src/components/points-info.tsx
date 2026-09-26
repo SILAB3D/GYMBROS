@@ -50,10 +50,6 @@ export function PointsInfo() {
                 <h3 className="font-semibold">🏋️ Entrenamiento completado</h3>
                 <Row label="Por cada serie realizada" points={`+${perSet}`} />
                 <Row label="Por el simple hecho de entrenar" points={`+${data.workoutBonus}`} />
-                <p className="text-xs text-muted">
-                  Si no marcas ninguna serie, se cuentan todas las del entrenamiento. Ejemplo: 20 series
-                  = {20 * perSet + data.workoutBonus} puntos.
-                </p>
               </section>
             )}
 
@@ -80,13 +76,6 @@ export function PointsInfo() {
                 </p>
               </section>
             )}
-
-            <section className="space-y-1.5">
-              <h3 className="font-semibold">⭐ Puntos extra</h3>
-              <p className="text-xs text-muted">
-                El administrador puede dar puntos extra de forma puntual.
-              </p>
-            </section>
           </div>
         )}
       </Modal>
