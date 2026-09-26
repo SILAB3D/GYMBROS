@@ -47,6 +47,14 @@ export type AppUpdate = {
 /** De la más reciente a la más antigua. */
 export const APP_UPDATES: AppUpdate[] = [
   {
+    id: "v4.1-sistema-puntos",
+    date: "2026-09-26",
+    emoji: "📊",
+    title: "Sistema de puntos actualizado",
+    description:
+      "Hemos renovado cómo se ganan los puntos: ahora cada entrenamiento suma según las series que hagas, y hemos recalculado todo el historial para que el ranking sea justo. ¿Quieres saber cuánto vale cada cosa? Toca el icono ⓘ en Inicio → Mis puntos. ¡A sumar! 💪",
+  },
+  {
     id: "v3.16-interfaz-progreso-gym",
     date: "2026-09-20",
     emoji: "✨",
