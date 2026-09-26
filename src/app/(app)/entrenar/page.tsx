@@ -10,6 +10,7 @@ import { api } from "@/trpc/react";
 import { Button, Card, Input, Modal, Spinner, EmptyState, ProgressBar } from "@/components/ui";
 import { WorkoutLauncher } from "@/components/workout-launcher";
 import { RestTimer } from "@/components/rest-timer";
+import { PendingSetsReview, type PendingExercise } from "@/components/pending-sets-review";
 import { cn, MUSCLE_LABELS } from "@/lib/utils";
 
 export default function ActiveWorkoutPage() {
@@ -23,6 +24,13 @@ export default function ActiveWorkoutPage() {
   const [result, setResult] = useState<string[] | null>(null);
   // Puntos del entreno (van por serie, así que cambian de una sesión a otra)
   const [earned, setEarned] = useState(0);
+  // Series que se quedaron sin completar: se enseñan al terminar por si fue un despiste
+  const [review, setReview] = useState<{
+    workoutId: string;
+    pending: PendingExercise[];
+  } | null>(null);
+  // Lo que cambió al corregirlas (null si no se tocó nada)
+  const [corrected, setCorrected] = useState<number | null>(null);
   const [locked, setLocked] = useState(true);
   // Se pone a true cuando el usuario confirma que los valores raros son reales
   const [outliersOk, setOutliersOk] = useState(false);
@@ -60,6 +68,7 @@ export default function ActiveWorkoutPage() {
       setFinishOpen(false);
       setResult(res.newPRs);
       setEarned(res.workoutPoints);
+      setReview(res.pending.length > 0 ? { workoutId: res.workoutId, pending: res.pending } : null);
     },
   });
 
@@ -80,9 +89,26 @@ export default function ActiveWorkoutPage() {
         ) : earned > 0 ? (
           <p className="text-muted">+{earned} {earned === 1 ? "punto" : "puntos"} para el ranking</p>
         ) : null}
-        <Link href="/panel">
-          <Button size="lg">Volver a inicio</Button>
-        </Link>
+        {corrected !== null && (
+          <p className="text-sm text-accent">
+            Series corregidas{corrected !== 0 ? ` (${corrected > 0 ? "+" : ""}${corrected} puntos)` : ""}. Quedó
+            registrado como la incidencia de esta sesión.
+          </p>
+        )}
+        {review ? (
+          <PendingSetsReview
+            workoutId={review.workoutId}
+            pending={review.pending}
+            onDone={(delta) => {
+              setReview(null);
+              setCorrected(delta);
+            }}
+          />
+        ) : (
+          <Link href="/panel">
+            <Button size="lg">Volver a inicio</Button>
+          </Link>
+        )}
       </div>
     );
   }

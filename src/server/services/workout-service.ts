@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import { awardPoints, addFeed, notify, checkAchievements, workoutPointUnits } from "./gamification";
+import { awardPoints, awardWorkoutPoints, addFeed, notify, checkAchievements } from "./gamification";
 import { registerAttendance } from "./attendance-service";
 
 /** Tiempo máximo de una sesión: si se supera, se cierra sola. */
@@ -85,6 +85,42 @@ export async function syncRoutineFromWorkout(
   }
 }
 
+/** Ejercicio con las series que se quedaron sin completar al terminar. */
+export type PendingExercise = {
+  workoutExerciseId: string;
+  exercise: string;
+  noWeight: boolean;
+  sets: Array<{ id: string; setNumber: number; reps: number; weight: number }>;
+};
+
+/**
+ * Series sin completar de la sesión, por ejercicio, para que el usuario revise
+ * al terminar si se le olvidó marcarlas. Si no marcó ninguna se dan todas por
+ * hechas (ver workoutPointUnits), así que no hay nada que revisar.
+ */
+function pendingSets(
+  exercises: Array<{
+    id: string;
+    order: number;
+    exercise: { name: string; noWeight: boolean };
+    sets: Array<{ id: string; setNumber: number; reps: number; weight: number; completed: boolean }>;
+  }>,
+): PendingExercise[] {
+  if (!exercises.some((we) => we.sets.some((s) => s.completed))) return [];
+  return [...exercises]
+    .sort((a, b) => a.order - b.order)
+    .map((we) => ({
+      workoutExerciseId: we.id,
+      exercise: we.exercise.name,
+      noWeight: we.exercise.noWeight,
+      sets: we.sets
+        .filter((s) => !s.completed)
+        .sort((a, b) => a.setNumber - b.setNumber)
+        .map(({ id, setNumber, reps, weight }) => ({ id, setNumber, reps, weight })),
+    }))
+    .filter((we) => we.sets.length > 0);
+}
+
 /**
  * Finaliza un entrenamiento: calcula totales, detecta PRs, otorga puntos.
  * Usado por el botón "Finalizar" y por el autocierre a las 3 horas.
@@ -93,7 +129,7 @@ export async function finishWorkout(
   db: PrismaClient,
   workoutId: string,
   opts: { notes?: string; auto?: boolean } = {},
-): Promise<{ workoutId: string; newPRs: string[]; workoutPoints: number }> {
+): Promise<{ workoutId: string; newPRs: string[]; workoutPoints: number; pending: PendingExercise[] }> {
   const workout = await db.workout.findUnique({
     where: { id: workoutId },
     include: {
@@ -101,7 +137,7 @@ export async function finishWorkout(
       exercises: { include: { exercise: true, sets: true } },
     },
   });
-  if (!workout || workout.endedAt) return { workoutId, newPRs: [], workoutPoints: 0 };
+  if (!workout || workout.endedAt) return { workoutId, newPRs: [], workoutPoints: 0, pending: [] };
 
   const userId = workout.userId;
   let totalVolume = 0;
@@ -204,8 +240,8 @@ export async function finishWorkout(
   }
 
   const [workoutPoints] = await Promise.all([
-    // 1 punto (valor de la regla) por serie completada
-    awardPoints(db, userId, "WORKOUT_COMPLETED", { workoutId: workout.id }, workoutPointUnits(workout.exercises)),
+    // Entrenamiento completado: 1 punto (valor de la regla) por serie realizada + 5 por entrenar
+    awardWorkoutPoints(db, userId, workout.id, workout.exercises),
     // El volumen levantado es privado: no se publica en el feed
     addFeed(db, userId, "WORKOUT", `${user.name} completó ${workout.routine ? `la rutina ${workout.routine.emoji} ${workout.routine.name}` : "un entrenamiento"} ✅`),
   ]);
@@ -236,7 +272,7 @@ export async function finishWorkout(
     }
   }
 
-  return { workoutId: workout.id, newPRs, workoutPoints };
+  return { workoutId: workout.id, newPRs, workoutPoints, pending: pendingSets(workout.exercises) };
 }
 
 /** Cierra los entrenamientos del usuario que lleven más de 3 horas abiertos. */

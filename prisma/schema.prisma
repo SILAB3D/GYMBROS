@@ -372,7 +372,7 @@ model BodyMetric {
 
 enum PointType {
   ATTENDANCE // ir al gimnasio
-  WORKOUT_COMPLETED // completar rutina
+  WORKOUT_COMPLETED // entrenamiento completado (series realizadas + 5)
   NEW_PR // nuevo récord
   STREAK_7 // racha de 7 días
   ROUTINE_SHARED // compartir rutina

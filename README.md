@@ -58,7 +58,7 @@ Abre http://localhost:3000, regístrate con tu `INVITE_CODE`. **El primer usuari
 | Acción | Puntos |
 |---|---|
 | Ir al gimnasio | +10 |
-| Completar rutina | +15 |
+| Entrenamiento completado | +1 por serie realizada, +5 por entrenar |
 | Nuevo PR | +30 |
 | Racha de 7 días | +50 |
 | Compartir rutina | +10 |

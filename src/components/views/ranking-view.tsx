@@ -18,7 +18,7 @@ const PERIODS = [
 
 const POINT_LABELS: Record<string, string> = {
   ATTENDANCE: "Asistencias (legado)",
-  WORKOUT_COMPLETED: "Entrenamientos",
+  WORKOUT_COMPLETED: "Entrenamientos completados",
   NEW_PR: "Nuevos PRs",
   STREAK_7: "Rachas de 7 días",
   ROUTINE_SHARED: "Rutinas compartidas (legado)",

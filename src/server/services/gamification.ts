@@ -10,7 +10,8 @@ import { categoryEnabled, usersWithCategory, type NotifyCategory } from "./notif
 
 /**
  * Otorga los puntos de una regla. `units` multiplica el valor de la regla para
- * las que puntúan por cantidad (p. ej. "Completar rutina" va por serie).
+ * las que puntúan por cantidad (p. ej. "Entrenamiento completado" va por
+ * serie) y `bonus` se suma aparte, una sola vez.
  */
 export async function awardPoints(
   db: PrismaClient,
@@ -18,10 +19,12 @@ export async function awardPoints(
   type: PointType,
   meta?: Record<string, unknown>,
   units = 1,
+  bonus = 0,
 ) {
   const rule = await db.pointRule.findUnique({ where: { type } });
-  if (!rule || !rule.enabled || rule.points <= 0 || units <= 0) return 0;
-  const points = rule.points * units;
+  if (!rule || !rule.enabled || rule.points <= 0) return 0;
+  const points = rule.points * Math.max(units, 0) + bonus;
+  if (points <= 0) return 0;
   await db.pointEvent.create({
     data: { userId, type, points, meta: meta as object | undefined },
   });
@@ -37,6 +40,24 @@ export function workoutPointUnits(exercises: Array<{ sets: Array<{ completed: bo
   const all = exercises.flatMap((we) => we.sets);
   const done = all.filter((s) => s.completed).length;
   return done > 0 ? done : all.length;
+}
+
+/** Puntos fijos por el simple hecho de haber entrenado, además de los de cada serie. */
+export const WORKOUT_BONUS_POINTS = 5;
+
+/**
+ * "Entrenamiento completado": series realizadas (ver workoutPointUnits) por el
+ * valor de la regla, más WORKOUT_BONUS_POINTS por haber entrenado.
+ */
+export function awardWorkoutPoints(
+  db: PrismaClient,
+  userId: string,
+  workoutId: string,
+  exercises: Array<{ sets: Array<{ completed: boolean }> }>,
+) {
+  return awardPoints(
+    db, userId, "WORKOUT_COMPLETED", { workoutId }, workoutPointUnits(exercises), WORKOUT_BONUS_POINTS,
+  );
 }
 
 export async function notify(

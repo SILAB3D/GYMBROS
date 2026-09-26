@@ -51,8 +51,9 @@ const NO_WEIGHT: string[] = [
 ];
 
 const POINT_RULES: Array<{ type: PointType; name: string; points: number }> = [
-  // Por serie completada (si no se marcó ninguna, por serie de la sesión)
-  { type: "WORKOUT_COMPLETED", name: "Completar rutina (por serie)", points: 1 },
+  // Por serie realizada (si no se marcó ninguna, por serie de la sesión), más
+  // 5 fijos por haber entrenado (WORKOUT_BONUS_POINTS, en gamification.ts)
+  { type: "WORKOUT_COMPLETED", name: "Entrenamiento completado (por serie, +5 por entrenar)", points: 1 },
   { type: "NEW_PR", name: "Nuevo PR", points: 15 },
   { type: "STREAK_WEEK1", name: "Racha: 1 semana cumplida", points: 15 },
   { type: "STREAK_WEEK2", name: "Racha: 2 semanas seguidas", points: 25 },
@@ -115,6 +116,11 @@ async function main() {
   await prisma.pointRule.updateMany({
     where: { type: "WORKOUT_COMPLETED", name: "Completar rutina" },
     data: { name: "Completar rutina (por serie)", points: 1 },
+  });
+  // Y después cambió de nombre a "Entrenamiento completado" (los puntos se respetan)
+  await prisma.pointRule.updateMany({
+    where: { type: "WORKOUT_COMPLETED", name: "Completar rutina (por serie)" },
+    data: { name: "Entrenamiento completado (por serie, +5 por entrenar)" },
   });
 
   for (const rule of POINT_RULES) {

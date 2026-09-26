@@ -10,7 +10,8 @@
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "postinstall": "prisma generate",
-    "db:backfill-groups": "tsx prisma/backfill-groups.ts"
+    "db:backfill-groups": "tsx prisma/backfill-groups.ts",
+    "db:recalc-workout-points": "tsx prisma/recalc-workout-points.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

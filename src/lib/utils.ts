@@ -26,7 +26,7 @@ export const DAY_LABELS = ["D", "L", "M", "X", "J", "V", "S"];
 
 export const POINT_LABELS: Record<string, string> = {
   ATTENDANCE: "Asistencias (legado)",
-  WORKOUT_COMPLETED: "Entrenamientos",
+  WORKOUT_COMPLETED: "Entrenamientos completados",
   NEW_PR: "Nuevos PRs",
   ROUTINE_SHARED: "Rutinas compartidas (legado)",
   STREAK_WEEK1: "Racha: 1.ª semana",
