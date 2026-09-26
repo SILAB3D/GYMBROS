@@ -8,6 +8,7 @@ import { api } from "@/trpc/react";
 import { Card, Spinner } from "@/components/ui";
 import { MonthCalendar } from "@/components/month-calendar";
 import { PointsBreakdown } from "@/components/points-breakdown";
+import { PointsInfo } from "@/components/points-info";
 import { StreakProgress } from "@/components/streak-progress";
 import { SeasonPanel } from "@/components/season-panel";
 import { YearSummary } from "@/components/year-summary";
@@ -80,6 +81,7 @@ export default function DashboardPage() {
           <div className="mb-3 flex items-center justify-between">
             <h2 className="flex items-center gap-2 font-semibold">
               <Trophy className="h-4 w-4 text-gold" /> Mis puntos
+              <PointsInfo />
             </h2>
             <Link href="/comunidad?tab=ranking" className="text-xs text-accent hover:underline">
               Ver ranking

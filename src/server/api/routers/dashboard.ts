@@ -8,6 +8,7 @@ import { weekStreakState } from "@/server/services/streak";
 import { reconcilePlan } from "@/server/services/plan-service";
 import { seasonAt } from "@/server/services/season";
 import { groupMemberIds } from "@/server/services/group";
+import { WORKOUT_BONUS_POINTS } from "@/server/services/gamification";
 
 export const dashboardRouter = createTRPCRouter({
   summary: protectedProcedure.query(async ({ ctx }) => {
@@ -124,6 +125,21 @@ export const dashboardRouter = createTRPCRouter({
       },
       yearAttendances,
       monthlyAvgWorkouts,
+    };
+  }),
+
+  /**
+   * Esquema del sistema de puntos para el botón de información de Inicio: las
+   * reglas automáticas activas con sus valores reales (los que fija el admin).
+   */
+  pointRules: protectedProcedure.query(async ({ ctx }) => {
+    const rules = await ctx.db.pointRule.findMany({
+      where: { type: { not: null }, enabled: true },
+      select: { type: true, points: true },
+    });
+    return {
+      rules: rules.map((r) => ({ type: r.type as string, points: r.points })),
+      workoutBonus: WORKOUT_BONUS_POINTS,
     };
   }),
 });
